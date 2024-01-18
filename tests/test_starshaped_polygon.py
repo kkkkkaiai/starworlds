@@ -10,16 +10,108 @@ from dynamic_obstacle_avoidance.visualization import (
     plot_obstacles,
 )
 
+from dynamic_obstacle_avoidance.containers import ObstacleContainer
+
 visualize = True
 
-def test_starshaped_obstacle():
+def star_ds(points, center, x_lim=[-8, 8], y_lim=[-8, 8]):
+    obstacle_environment = []
+    ss_polygon = Polygon(
+                    edge_points=points,
+                    center_position=center,
+                    is_boundary=True,
+                    tail_effect=False,
+                )
+    obstacle_environment.append(
+        # StarshapedFlower(
+        #     center_position=np.array([0, 0]),
+        #     is_boundary=True,
+        # )
+        ss_polygon,
+    )
+    print('1111')
+    # print(ss_polygon.get_gamma(np.array([ 41.97, 85.        ])))
+    # print(ss_polygon.get_local_radius_point(np.array([100.,  22.63157895])))
 
+    initial_dynamics = LinearSystem(
+        attractor_position=np.array([40, 110]),
+        maximum_velocity=0.5,
+        distance_decrease=0.3,
+    )
+
+    if True:
+        plt.close("all")
+
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+
+        Simulation_vectorFields(
+            x_range=[-5, 100],
+            y_range=[-5, 150],
+            point_grid=100,
+            obstacle_list=obstacle_environment,
+            pos_attractor=initial_dynamics.attractor_position,
+            dynamical_system=initial_dynamics.evaluate,
+            noTicks=True,
+            automatic_reference_point=False,
+            show_streamplot=True,
+            draw_vectorField=True,
+            normalize_vectors=False,
+        )
+
+        # plot the scale
+        plt.show()
+        plt.savefig("test_online_star.png", dpi=300)
+
+
+def starshaped_polygon(points):
+    xlim = [-5, 100]
+    ylim = [-5, 150]
+    pol = StarshapedPolygon(points);
+
+    while True:
+        x = np.array([np.random.uniform(*xlim), np.random.uniform(*ylim)])
+        if pol.exterior_point(x):
+            break
+    b = pol.boundary_mapping(x)
+    n = pol.normal(x)
+    tp = pol.tangent_points(x)
+    dir = pol.reference_direction(x)
+
+    _, ax = pol.draw()
+    ax.plot(*zip(pol.xr(Frame.GLOBAL), x), 'k--o')
+    if b is not None:
+        ax.plot(*b, 'y+')
+        ax.quiver(*b, *n)
+    if tp:
+        ax.plot(*zip(x, tp[0]), 'g:')
+        ax.plot(*zip(x, tp[1]), 'g:')
+    ax.quiver(*pol.xr(Frame.GLOBAL), *dir, color='c', zorder=3)
+
+    b_list = []
+
+    for i in np.linspace(0, 2 * np.pi, 100):
+        x = pol.xr() + 100*np.array([np.cos(i), np.sin(i)])
+        b = pol.boundary_mapping(x)
+        b_list.append(b)
+        n = pol.normal(b)
+        ax.quiver(*b, *n, color='g')
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    print("es")
+    plt.savefig("test_starshaped_polygon.png", dpi=300)
+
+    b_list = np.array(b_list).T
+
+    star_ds(b_list, np.array([60, 100]), x_lim=xlim, y_lim=ylim)
+
+def test_starshaped_obstacle():
     avg_radius = 2
     xlim = [-2*avg_radius, 2*avg_radius]
     ylim = xlim
+    # print(generate_star_polygon([0, 0], avg_radius, irregularity=0.1, spikiness=0.5, num_vertices=10))
     pol = StarshapedPolygon(generate_star_polygon([0, 0], avg_radius, irregularity=0.1, spikiness=0.5, num_vertices=10))
 
-    print(pol.distance_function(np.array([0, 0])))
+    # print(pol.distance_function(np.array([0, 0])))
 
     while True:
         x = np.array([np.random.uniform(*xlim), np.random.uniform(*ylim)])
@@ -55,9 +147,9 @@ def test_starshaped_obstacle():
 
     plt.cla()
     margin_absolut = 0.05
-    center_position = np.array([0.0, 0.0])
     b_list = np.array(b_list).T
 
+    
     obstacle_environment = []
     obstacle_environment.append(
         # StarshapedFlower(
@@ -72,7 +164,7 @@ def test_starshaped_obstacle():
     )
 
     initial_dynamics = LinearSystem(
-        attractor_position=np.array([0.2, 0.0]),
+        attractor_position=np.array([1.8, 0.0]),
         maximum_velocity=0.5,
         distance_decrease=0.3,
     )
@@ -106,6 +198,5 @@ def test_starshaped_obstacle():
 
     for i in range(10):
         point = b_list[:, i]
-        
 
-test_starshaped_obstacle()
+# test_starshaped_obstacle()
