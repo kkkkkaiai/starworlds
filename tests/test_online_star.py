@@ -84,7 +84,7 @@ if __name__ == '__main__':
     map_file = 'maps/obstacle_map_occupancy.png'
     gridmap = OccupancyGridMap.from_png(map_file, 0.1)
     pM = PathManager(gridmap)
-    start_position = np.array([6.0, 10])
+    start_position = np.array([6.0, 10.0])
 
     robot_c = start_position
     robot_yaw = 0.0
@@ -98,6 +98,8 @@ if __name__ == '__main__':
     pM.plot_map()
     # plot laser points
     plt.scatter(laser_points[:, 0], laser_points[:, 1], s=1, c='red', label='laser points')
+    # plot start position
+    plt.plot(start_position[0]/0.1, start_position[1]/0.1, 'go', label='start position')
     plt.savefig('test_laser_points.png', dpi=300)
 
     # convert laser points' type to list

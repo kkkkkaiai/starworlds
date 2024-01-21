@@ -34,7 +34,7 @@ def star_ds(points, center, x_lim=[-8, 8], y_lim=[-8, 8]):
     # print(ss_polygon.get_local_radius_point(np.array([100.,  22.63157895])))
 
     initial_dynamics = LinearSystem(
-        attractor_position=np.array([40, 110]),
+        attractor_position=np.array([52, 80]),
         maximum_velocity=0.5,
         distance_decrease=0.3,
     )
@@ -89,7 +89,7 @@ def starshaped_polygon(points):
 
     b_list = []
 
-    for i in np.linspace(0, 2 * np.pi, 100):
+    for i in np.linspace(0, 2 * np.pi, 200):
         x = pol.xr() + 100*np.array([np.cos(i), np.sin(i)])
         b = pol.boundary_mapping(x)
         b_list.append(b)
