@@ -4,6 +4,7 @@ from matplotlib.patches import PathPatch, Circle
 from envs.gridmap import OccupancyGridMap
 from planner.path_generator.astar import a_star
 from planner.trajectory_generator.spline_interpolate import *
+from starshaped_hull.graph import GraphManager
 
 from sensors.laser_anyshape import Laser
 from sklearn.cluster import DBSCAN
@@ -86,7 +87,8 @@ if __name__ == '__main__':
     resolusion = 0.1
     gridmap = OccupancyGridMap.from_png(map_file, resolusion)
     pM = PathManager(gridmap)
-    start_position = np.array([6.0, 10.0])
+    # start_position = np.array([8.0, 5.5])
+    start_position = np.array([3.0, 9.9])
 
     robot_c = start_position
     robot_yaw = 0.0
@@ -120,8 +122,10 @@ if __name__ == '__main__':
     xlim = [-5, 20]
     ylim = [-5, 20]
 
-    b_list = starshaped_polygon(laser_points)
-    star_ds(b_list*resolusion, start_position, np.array([5.2, 9.0]), x_lim=xlim, y_lim=ylim, plot=False)
+    b_list = starshaped_polygon(laser_points, plot=False)
+    star_ds(b_list*resolusion, start_position, start_position, x_lim=xlim, y_lim=ylim, plot=False)
     # star_ds(laser_points, start_position)
     plt.cla()
     star_node = StarshapedRep(b_list*resolusion, start_position)
+    graph_manager = GraphManager(star_node)
+    graph_manager.find_path(1, np.array([2, 6.5]))

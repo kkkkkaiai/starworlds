@@ -20,7 +20,7 @@ class StarshapedRep:
         self.starshaped_fit()
         self.get_frontier_points()
 
-        # self.draw()
+        self.draw()
 
     def starshaped_fit(self, segment=5, padding=5):
         starshaped_range = np.array([np.linalg.norm(self.points[i] - self.center) for i in range(len(self.points))])
@@ -81,7 +81,7 @@ class StarshapedRep:
             min_angle = np.min(angles)
             max_angle = np.max(angles)
 
-            if max_angle - min_angle > np.pi:
+            if max_angle - min_angle > np.pi*1.5:
                 angles[angles < 0] += 2 * np.pi
 
             # find the max and min angle
@@ -130,12 +130,20 @@ class StarshapedRep:
     
     def get_gamma(self, point, inverted=True, p=1):
         theta = np.arctan2(point[1] - self.center[1], point[0] - self.center[0])
+        if theta < 0:
+            theta += 2 * np.pi
         radius_val = self.radius(theta)
         dis_from_center = np.linalg.norm(point - self.center)
+        print('gamma', radius_val, dis_from_center)
         if inverted:
             return (radius_val / dis_from_center)**(2*p)
         else:
             return (dis_from_center / radius_val)**(2*p)
+        
+    def is_in_star(self, point, inverted=True):
+        gamma = self.get_gamma(point, inverted=inverted)
+        print(gamma)
+        return gamma > 1
 
     def draw(self):
 
