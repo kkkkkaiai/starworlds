@@ -14,7 +14,7 @@ from dynamic_obstacle_avoidance.containers import ObstacleContainer
 
 visualize = True
 
-def star_ds(points, center, x_lim=[-8, 8], y_lim=[-8, 8]):
+def star_ds(points, center, attractive_position, x_lim=[-8, 8], y_lim=[-8, 8], plot=False):
     obstacle_environment = []
     ss_polygon = Polygon(
                     edge_points=points,
@@ -29,25 +29,25 @@ def star_ds(points, center, x_lim=[-8, 8], y_lim=[-8, 8]):
         # )
         ss_polygon,
     )
-    print('1111')
+
     # print(ss_polygon.get_gamma(np.array([ 41.97, 85.        ])))
     # print(ss_polygon.get_local_radius_point(np.array([100.,  22.63157895])))
 
     initial_dynamics = LinearSystem(
-        attractor_position=np.array([52, 80]),
+        attractor_position=attractive_position,
         maximum_velocity=0.5,
         distance_decrease=0.3,
     )
 
-    if True:
+    if plot:
         plt.close("all")
 
         fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
         Simulation_vectorFields(
-            x_range=[-5, 100],
-            y_range=[-5, 150],
-            point_grid=100,
+            x_range=x_lim,
+            y_range=y_lim,
+            point_grid=200,
             obstacle_list=obstacle_environment,
             pos_attractor=initial_dynamics.attractor_position,
             dynamical_system=initial_dynamics.evaluate,
@@ -63,7 +63,7 @@ def star_ds(points, center, x_lim=[-8, 8], y_lim=[-8, 8]):
         plt.savefig("test_online_star.png", dpi=300)
 
 
-def starshaped_polygon(points):
+def starshaped_polygon(points, point_num=200, plot=False):
     xlim = [-5, 100]
     ylim = [-5, 150]
     pol = StarshapedPolygon(points);
@@ -89,20 +89,21 @@ def starshaped_polygon(points):
 
     b_list = []
 
-    for i in np.linspace(0, 2 * np.pi, 200):
+    for i in np.linspace(0, 2 * np.pi, point_num):
         x = pol.xr() + 100*np.array([np.cos(i), np.sin(i)])
         b = pol.boundary_mapping(x)
         b_list.append(b)
         n = pol.normal(b)
-        ax.quiver(*b, *n, color='g')
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
-    print("es")
-    plt.savefig("test_starshaped_polygon.png", dpi=300)
+        if plot:
+            ax.quiver(*b, *n, color='g')
+    if plot:
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        plt.savefig("test_starshaped_polygon.png", dpi=300)
 
     b_list = np.array(b_list).T
 
-    star_ds(b_list, np.array([60, 100]), x_lim=xlim, y_lim=ylim)
+    return b_list
 
 def test_starshaped_obstacle():
     avg_radius = 2

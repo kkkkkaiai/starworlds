@@ -8,6 +8,7 @@ from planner.trajectory_generator.spline_interpolate import *
 from sensors.laser_anyshape import Laser
 from sklearn.cluster import DBSCAN
 from test_starshaped_polygon import star_ds, starshaped_polygon
+from starshaped_hull.starshaped_fit import StarshapedRep
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -82,7 +83,8 @@ class PathManager:
 
 if __name__ == '__main__':
     map_file = 'maps/obstacle_map_occupancy.png'
-    gridmap = OccupancyGridMap.from_png(map_file, 0.1)
+    resolusion = 0.1
+    gridmap = OccupancyGridMap.from_png(map_file, resolusion)
     pM = PathManager(gridmap)
     start_position = np.array([6.0, 10.0])
 
@@ -95,14 +97,15 @@ if __name__ == '__main__':
 
     laser_points = de_obs['point']
 
-    pM.plot_map()
-    # plot laser points
-    plt.scatter(laser_points[:, 0], laser_points[:, 1], s=1, c='red', label='laser points')
-    # plot start position
-    plt.plot(start_position[0]/0.1, start_position[1]/0.1, 'go', label='start position')
-    plt.savefig('test_laser_points.png', dpi=300)
+    ## plot the map
+    # pM.plot_map()
+    ## plot laser points
+    # plt.scatter(laser_points[:, 0], laser_points[:, 1], s=1, c='red', label='laser points')
+    ## plot start position
+    # plt.plot(start_position[0]/0.1, start_position[1]/0.1, 'go', label='start position')
+    # plt.savefig('test_laser_points.png', dpi=300)
 
-    # convert laser points' type to list
+    # convert laser points' type to list 
     laser_points = laser_points.tolist()
 
     points = []
@@ -110,5 +113,15 @@ if __name__ == '__main__':
         points.append(tuple(laser_points[i]))
 
     plt.cla()
-    starshaped_polygon(laser_points)
+
+    # xlim = [-5, 100]
+    # ylim = [-5, 150]
+
+    xlim = [-5, 20]
+    ylim = [-5, 20]
+
+    b_list = starshaped_polygon(laser_points)
+    star_ds(b_list*resolusion, start_position, np.array([5.2, 9.0]), x_lim=xlim, y_lim=ylim, plot=False)
     # star_ds(laser_points, start_position)
+    plt.cla()
+    star_node = StarshapedRep(b_list*resolusion, start_position)
