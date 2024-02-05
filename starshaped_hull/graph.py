@@ -10,6 +10,7 @@ class Node:
         self._point = point
         self._type = type # 0 is starshaped node, 1 is frontier node
         self._valid = True
+        self._star_rep_id = None
 
     def __hash__(self) -> int:
         return hash(tuple(self._point))
@@ -19,11 +20,20 @@ class Node:
 
     def is_stuck(self):
         return not self._valid
+
+    def is_starshape(self):
+        return self._type == 0
+
+    def star_id(self):
+        if self.is_starshape() and self._star_rep_id is not None:
+            return self._star_rep_id
+        return None
     
-    def star_rep(self, star_rep):
+    def star_rep(self, star_rep, id):
         self._star_rep = star_rep
         self._type = 0
-
+        self._star_rep_id = id
+        
     def is_in_star(self, point):
         if self._type == 0:
             return self._star_rep.is_in_star(point)
@@ -36,8 +46,10 @@ class GraphManager:
         self._nodes = defaultdict(Node)
         
         self._id_list = []
+        self._star_id_list = []
         self.start_id = None
         self.id = 0
+        self._star_rep_id = 0
         self.is_init = False
         self.initial(root)
 
@@ -45,10 +57,16 @@ class GraphManager:
         self.id += 1
         return self.id
 
+    def gen_star_id(self):
+        self._star_rep_id += 1
+        return self._star_rep_id
+
     def initial(self, root):
         self.start_id = self.gen_id()
+        self.start_star_id = self.gen_star_id()
+        self._star_id_list.append(self.start_id)
         self._nodes[self.start_id] = Node(root.center)
-        self._nodes[self.start_id].star_rep(root)
+        self._nodes[self.start_id].star_rep(root, self.start_id)
         frontier_points = root.frontier_points
         for i in range(len(frontier_points)):
             new_id = self.gen_id()
@@ -91,11 +109,13 @@ class GraphManager:
         close_list = set()
         
         found_path = False
+        reach_goal = False
 
         if self._nodes[in_star_id].is_in_star(goal_point):
             road_map[in_star_id].parent = -1
             close_list.add(in_star_id)
             found_path = True
+            reach_goal = True
         else:   
             while open_list and not found_path:
                 _, cur_id = heapq.heappop(open_list)
@@ -107,7 +127,9 @@ class GraphManager:
                 neighbor_ids = self.get_neighbor(cur_id)   
                 for next_id in neighbor_ids:
                     if self._nodes[next_id].is_in_star(goal_point):
-                        return self._nodes[next_id]._point
+                        road_map[next_id].parent = cur_id
+                        found_path = True
+                        reach_goal = True
                     
                     if self._nodes[next_id].is_stuck():
                         continue
@@ -130,6 +152,7 @@ class GraphManager:
             # if goal point in the star, return the goal point
             if len(close_list) == 1:
                 # log path and path id
+                print('in')
                 path['path'] = [self._nodes[in_star_id]._point, goal_point]
                 path['path_id'] = [in_star_id, 0] # 0 is the id of the goal point
             else:
@@ -147,16 +170,26 @@ class GraphManager:
         else:
             print('[WARNNING] PRM: Was not able to find a path!')
 
-        print(path)
-        return path
+        return path, reach_goal
 
     def extend_node(self, node_id, star_rep):
-        self._nodes[node_id].star_rep(star_rep)
+        # node_id is the id of current node
+        new_star_id = self.gen_star_id()
+        self._nodes[node_id].star_rep(star_rep, new_star_id)
         frontier_points = star_rep.frontier_points
         for i in range(len(frontier_points)):
-            new_id = gen_id()
+            # check the frontier points is in the other starshaped polygon
+            for j in range(len(self._star_id_list)):
+                if self._nodes[self._star_id_list[j]].is_in_star(frontier_points[i]):
+                    continue
+            new_id = self.gen_id()
             self.add_node(node_id, new_id)
             self._nodes[new_id] = Node(frontier_points[i])
+        
+        self._star_id_list.append(node_id)
+            
+    def get_star_id(self, node_id):
+        return self._nodes[node_id].star_id()
 
     def invalid_node(self, node_id):
         self._nodes[node_id].stuck()

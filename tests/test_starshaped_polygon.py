@@ -77,15 +77,16 @@ def starshaped_polygon(points, point_num=200, plot=False):
     tp = pol.tangent_points(x)
     dir = pol.reference_direction(x)
 
-    _, ax = pol.draw()
-    ax.plot(*zip(pol.xr(Frame.GLOBAL), x), 'k--o')
-    if b is not None:
-        ax.plot(*b, 'y+')
-        ax.quiver(*b, *n)
-    if tp:
-        ax.plot(*zip(x, tp[0]), 'g:')
-        ax.plot(*zip(x, tp[1]), 'g:')
-    ax.quiver(*pol.xr(Frame.GLOBAL), *dir, color='c', zorder=3)
+    if plot:
+        _, ax = pol.draw()
+        ax.plot(*zip(pol.xr(Frame.GLOBAL), x), 'k--o')
+        if b is not None:
+            ax.plot(*b, 'y+')
+            ax.quiver(*b, *n)
+        if tp:
+            ax.plot(*zip(x, tp[0]), 'g:')
+            ax.plot(*zip(x, tp[1]), 'g:')
+        ax.quiver(*pol.xr(Frame.GLOBAL), *dir, color='c', zorder=3)
 
     b_list = []
 

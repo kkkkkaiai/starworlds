@@ -1,19 +1,29 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import rospy
 
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch, Circle
-from envs.gridmap import OccupancyGridMap
-from planner.path_generator.astar import a_star
 from planner.trajectory_generator.spline_interpolate import *
 from starshaped_hull.graph import GraphManager
-
+from obstacles import Frame,  StarshapedPolygon
 from sensors.laser_anyshape import Laser
 from sklearn.cluster import DBSCAN
-from test_starshaped_polygon import star_ds, starshaped_polygon
 from starshaped_hull.starshaped_fit import StarshapedRep
+
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import LaserScan
 
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+robot_c = None
+robot_yaw = None
+is_robot_init = False
+
+laser = None
+is_laser_init = False
 resolusion = 0.05
 
 class PathManager:
@@ -81,79 +91,122 @@ class PathManager:
         except:
             print('Not do interpolation yet, please call spline_interpolate() first')
 
+def odom_cb(msg):
+    global robot_c, robot_yaw, is_robot_init
+    robot_c = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y])
+    robot_yaw = np.arctan2(msg.pose.pose.orientation.z, msg.pose.pose.orientation.w)*2
+    if not is_robot_init:
+        is_robot_init = True
+
+def laser_callback(msg):
+    global laser_points
+    laser_points = []
+    inf = float('inf')
+    for i in range(len(msg.ranges)):
+        # check if the point is inf
+        if msg.ranges[i] == inf:
+            continue
+
+        if msg.ranges[i] < msg.range_max and msg.ranges[i] > msg.range_min:
+            angle = msg.angle_min + i * msg.angle_increment
+            x = msg.ranges[i] * np.cos(angle)
+            y = msg.ranges[i] * np.sin(angle)
+            laser_points.append([x, y])
+
+def transform_to_global_frame(points, robot_c, robot_yaw):
+    points = np.array(points)
+    points = points.T
+    points = np.vstack((points, np.ones(points.shape[1])))
+    T = np.array([[np.cos(robot_yaw), -np.sin(robot_yaw), robot_c[0]], 
+                  [np.sin(robot_yaw), np.cos(robot_yaw), robot_c[1]], 
+                  [0, 0, 1]])
+    points = np.dot(T, points)
+    return points[:2].T
+    
+
+def starshaped_polygon(points, point_num=200, plot=False):
+    xlim = [-5, 100]
+    ylim = [-5, 150]
+    pol = StarshapedPolygon(points);
+
+    while True:
+        x = np.array([np.random.uniform(*xlim), np.random.uniform(*ylim)])
+        if pol.exterior_point(x):
+            break
+    b = pol.boundary_mapping(x)
+    n = pol.normal(x)
+    tp = pol.tangent_points(x)
+    dir = pol.reference_direction(x)
+
+    if plot:
+        _, ax = pol.draw()
+        ax.plot(*zip(pol.xr(Frame.GLOBAL), x), 'k--o')
+        if b is not None:
+            ax.plot(*b, 'y+')
+            ax.quiver(*b, *n)
+        if tp:
+            ax.plot(*zip(x, tp[0]), 'g:')
+            ax.plot(*zip(x, tp[1]), 'g:')
+        ax.quiver(*pol.xr(Frame.GLOBAL), *dir, color='c', zorder=3)
+
+    b_list = []
+
+    for i in np.linspace(0, 2 * np.pi, point_num):
+        x = pol.xr() + 100*np.array([np.cos(i), np.sin(i)])
+        b = pol.boundary_mapping(x)
+        b_list.append(b)
+        n = pol.normal(b)
+        if plot:
+            ax.quiver(*b, *n, color='g')
+    if plot:
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        plt.savefig("test_starshaped_polygon.png", dpi=300)
+
+    b_list = np.array(b_list).T
+
+    return b_list
+
+
 
 if __name__ == '__main__':
-    map_file = 'maps/obstacle_map_occupancy.png'
-    resolusion = 0.1    
+    print('before')
+    rospy.init_node('test_star_ros', anonymous=True)
+    print('test_online_star_ros')
+    # get odom 
+    odom_sub = rospy.Subscriber('/odom', Odometry, odom_cb)
+    # get laser scan
+    laser_sub = rospy.Subscriber('/scan', LaserScan, laser_callback)
+
     xlim = [-5, 20]
     ylim = [-5, 20]
 
-    
-    gridmap = OccupancyGridMap.from_png(map_file, resolusion)
-    pM = PathManager(gridmap)
     # start_position = np.array([8.0, 5.5])
-    start_position = np.array([3.0, 3.0])
+    rate = rospy.Rate(10)
+    while not is_robot_init:
+        print('temp')
+        rate.sleep()
+
+    # to be assigned
     goal_position = np.array([8, 5.0])
-
-    robot_c = start_position
-    robot_yaw = 0.0
     
-    # instance a laser class
-    laser = Laser(beams=128)
-    laser.set_map(gridmap)
-    
-    
-    ## plot the map
-    # pM.plot_map()
-    ## plot laser points
-    # plt.scatter(laser_points[:, 0], laser_points[:, 1], s=1, c='red', label='laser points')
-    ## plot start position
-    # plt.plot(start_position[0]/0.1, start_position[1]/0.1, 'go', label='start position')
-    # plt.savefig('test_laser_points.png', dpi=300)
-    
-    # points = []
-    # for i in range(len(laser_points)):
-    #     points.append(tuple(laser_points[i]))
+    start_position = robot_c
 
-    plt.cla()
+    laser_points = transform_to_global_frame(laser_points, robot_c, robot_yaw)
 
-    # generate the laser points
-    de_obs = laser.state2obs(robot_c, robot_yaw, False)
-    laser_points = de_obs['point']
-    # convert laser points' type to list 
-    laser_points = laser_points.tolist()
+    print(laser_points.T)
+    print(len(laser_points))
 
-    b_list = starshaped_polygon(laser_points, plot=False)
+    # b_list = starshaped_polygon(laser_points, plot=False)
+    # print(b_list)
     # star_ds(b_list*resolusion, start_position, start_position, x_lim=xlim, y_lim=ylim, plot=False)
     # star_ds(laser_points, start_position)
     # plt.cla()
-    star_node = StarshapedRep(b_list*resolusion, start_position)
+    star_node = StarshapedRep(laser_points.T, start_position)
     star_node.draw('test1')
     graph_manager = GraphManager(star_node)
     path, reach = graph_manager.find_path(1, goal_position)
     id = path['path_id'][-1]
-    
+
     plot_number = 0
-
-    while not reach:
-        new_position = path['path'][-1]
-        de_obs = laser.state2obs(new_position, robot_yaw, False)
-        laser_points = de_obs['point']
-        laser_points = laser_points.tolist()
-        b_list = starshaped_polygon(laser_points, plot=False)
-        star_node = StarshapedRep(b_list*resolusion, new_position)
-        plot_name = 'test' + str(plot_number)
-        plot_number += 1
-        star_node.draw(plot_name)
-        graph_manager.extend_node(id, star_node)
-        path, reach = graph_manager.find_path(1, goal_position)
-        id = path['path_id'][-1]
-        print(path, reach)
-
-    plt.savefig('finding_path.png', dpi=300)
-
-    
-
-
-
-
+    plt.savefig('finding_path1.png', dpi=300)
