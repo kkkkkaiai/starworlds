@@ -1,0 +1,10 @@
+1√. incorporate the fitting polynomical representation
+2√. construct graph
+3√. search path in graph and generate subgoal
+4√. finish a initial main loop
+5. move to subgoal and judge if the goal is able to extend
+6√. get right reference direction
+7√. get right normal direction
+8√. combine the DS modulation
+9√. fix the wrong dynamic system modulation
+10. do experiment

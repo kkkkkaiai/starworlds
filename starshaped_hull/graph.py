@@ -11,6 +11,7 @@ class Node:
         self._type = type # 0 is starshaped node, 1 is frontier node
         self._valid = True
         self._star_rep_id = None
+        self._star_rep = None
 
     def __hash__(self) -> int:
         return hash(tuple(self._point))
@@ -29,6 +30,9 @@ class Node:
             return self._star_rep_id
         return None
     
+    def get_gamma(self, point):
+        return self._star_rep.get_gamma(point)
+
     def star_rep(self, star_rep, id):
         self._star_rep = star_rep
         self._type = 0
@@ -57,13 +61,8 @@ class GraphManager:
         self.id += 1
         return self.id
 
-    def gen_star_id(self):
-        self._star_rep_id += 1
-        return self._star_rep_id
-
     def initial(self, root):
         self.start_id = self.gen_id()
-        self.start_star_id = self.gen_star_id()
         self._star_id_list.append(self.start_id)
         self._nodes[self.start_id] = Node(root.center)
         self._nodes[self.start_id].star_rep(root, self.start_id)
@@ -174,8 +173,7 @@ class GraphManager:
 
     def extend_node(self, node_id, star_rep):
         # node_id is the id of current node
-        new_star_id = self.gen_star_id()
-        self._nodes[node_id].star_rep(star_rep, new_star_id)
+        self._nodes[node_id].star_rep(star_rep, node_id)
         frontier_points = star_rep.frontier_points
         for i in range(len(frontier_points)):
             # check the frontier points is in the other starshaped polygon
