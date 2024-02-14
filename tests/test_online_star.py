@@ -473,6 +473,7 @@ if __name__ == '__main__':
     reach_local = False
     update_hz = 10
     iter = 0
+    interval = 2
 
     # generate a color
     color = np.random.rand(3,)
@@ -491,7 +492,8 @@ if __name__ == '__main__':
         new_position = new_position + new_velocity * 1/update_hz
         
         color = np.random.rand(3,)
-        plt.arrow(new_position[0], new_position[1], new_velocity[0], new_velocity[1], head_width=0.1, head_length=0.1, fc=color*iter/100, ec=color*iter/100, animated=True)
+        if iter % interval == 0:
+            plt.arrow(new_position[0], new_position[1], new_velocity[0], new_velocity[1], head_width=0.1, head_length=0.1, fc=color*iter/100, ec=color*iter/100, animated=True)
 
         iter += 1
 
@@ -499,7 +501,8 @@ if __name__ == '__main__':
         if np.linalg.norm(local_position - new_position) < 0.1:
             reach_local = True
 
-        plt.savefig('finding_path.png', dpi=300)
+        if iter % interval == 0:
+            plt.savefig('finding_path.png', dpi=300)
 
     
 
