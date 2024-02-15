@@ -87,7 +87,6 @@ class StarshapedRep:
 
             if max_angle - min_angle > np.pi*1.9:
                 # find the max angle diff
-                # print('in')
                 max_diff = 0
                 temp_max_idx = 0
 
@@ -272,7 +271,7 @@ class StarshapedRep:
         # plt.savefig(name+'normal.png', dpi=300)
 
 
-    def draw(self, name='test'):
+    def draw(self, name='test', save=False):
 
         y1 = polynomic_func_9(self.x1, *self.popt1)
         y2 = polynomic_func_9(self.x2, *self.popt2)
@@ -285,12 +284,9 @@ class StarshapedRep:
         # plt.plot(self.x3, y3, 'b-', label="Fitted Curve poly")
         # plt.plot(self.x4, y4, 'y-', label="Fitted Curve poly")
         # plt.plot(self.x5, y5, 'b-', label="Fitted Curve poly")
-
         # print(self.x1, self.x2, self.x3, self.x4, self.x5)
-
         # plt.plot(self.x, self.y, 'ko', label="Fitted Curve poly")
         # plt.savefig("starshaped_fit.png", dpi=300)
-
         # plt.cla()
 
         re_starshaped_points = []
@@ -308,11 +304,11 @@ class StarshapedRep:
         # plot the starshaped points
         # plt.scatter(self.points[0:-1, 0], self.points[0:-1, 1], label='raw')
         # plot dbscan result
-        plt.scatter(self.points[:, 0], self.points[:, 1], c=self.labels, label='dbscan', s=5)
+        # plt.scatter(self.points[:, 0], self.points[:, 1], c=self.labels, label='dbscan', s=5)
         # plt.scatter(self.points[:, 0], self.points[:, 1], c=color, label='dbscan', s=5)
     
         # plot the center point
-        plt.scatter(self.center[0], self.center[1], label='center', s=10)
+        plt.scatter(self.center[0], self.center[1], label='center', s=60)
 
         # plot frontier points as plus symbol
         plt.plot(self.frontier_points[:, 0], self.frontier_points[:, 1], 'k+', label='frontier points')
@@ -321,7 +317,9 @@ class StarshapedRep:
         # the sides points
         plt.plot(self.sorted_points[:, 0], self.sorted_points[:, 1], 'y+', label='sorted points', scalex=20, scaley=20)
         plt.axis('equal')
-        # plt.savefig(name+'_starshaped_fit_retrive.png', dpi=300)
+        
+        if save:
+            plt.savefig(name+'_starshaped_fit_retrive.png', dpi=300)
 
 
 

@@ -151,7 +151,6 @@ class GraphManager:
             # if goal point in the star, return the goal point
             if len(close_list) == 1:
                 # log path and path id
-                print('in')
                 path['path'] = [self._nodes[in_star_id]._point, goal_point]
                 path['path_id'] = [in_star_id, 0] # 0 is the id of the goal point
             else:
@@ -171,7 +170,7 @@ class GraphManager:
 
         return path, reach_goal
 
-    def extend_node(self, node_id, star_rep):
+    def extend_star_node(self, node_id, star_rep):
         # node_id is the id of current node
         self._nodes[node_id].star_rep(star_rep, node_id)
         frontier_points = star_rep.frontier_points
