@@ -12,6 +12,7 @@ from sklearn.cluster import DBSCAN
 from test_starshaped_polygon import star_ds, starshaped_polygon
 from starshaped_hull.starshaped_fit import StarshapedRep
 from typing import Optional
+from copy import copy
 
 import warnings
 import numpy as np
@@ -390,64 +391,63 @@ def modulation_velocity(position, goal_position, graph_manager):
     
 
 if __name__ == '__main__':
-    map_file = 'maps/obstacle_map_occupancy.png'
-    # map_file = 'maps/example_map_occupancy.png'
+    # map params
+    map_file = 'maps/obstacle_map_occupancy_1.png'
     resolusion = 0.1
-    xlim = [-1, 12]
-    ylim = [-1, 15]
-
+    xlim = [-1, 11]
+    ylim = [-1, 17]
     
+    # load map
     gridmap = OccupancyGridMap.from_png(map_file, resolusion)
     pM = PathManager(gridmap)
-    # start_position = np.array([8.0, 5.5])
-    start_position = np.array([5.0, 2.0])
-    goal_position = np.array([8.0, 9.0])
 
+    # init robot
+    start_position = np.array([7.5, 2.5])
+    goal_position = np.array([8, 12.0])
     robot_c = start_position
     robot_yaw = 0.0
     
-    # instance a laser class
-    laser = Laser(beams=256)
+    # init laser
+    laser = Laser(beams=128, laser_length=10)
     laser.set_map(gridmap)
+    laser_detect_range = laser.max_detect_distance()
 
+    # plot params
     plt.cla()
     fig = plt.figure(figsize=(10, 10))
     plt.xlim(xlim)
     plt.ylim(ylim)
 
-    # plot the map
+    # plot a sparse map
     for i in range(xlim[0], xlim[1]):
         for j in range(ylim[0], ylim[1]):
             if gridmap.is_occupied((i, j)):
                 plt.plot(i, j, 'k.')
 
-    # generate the laser points
+    # generate laser points and starshaped representation
     de_obs = laser.state2obs(robot_c, robot_yaw, False)
     laser_points = de_obs['point']
-    # convert laser points' type to list 
-    # laser_points = laser_points.tolist()
+    # filter max detect range
+    # print(np.linalg.norm(laser_points-robot_c/resolusion, axis=1) < laser_detect_range / resolusion)
+    # laser_points = laser_points[np.linalg.norm(laser_points-robot_c/resolusion, axis=1) < laser_detect_range / resolusion, :]
+    # print(laser_points)
 
-    # b_list = starshaped_polygon(laser_points, plot=False)
-    # star_ds(b_list*resolusion, start_position, start_position, x_lim=xlim, y_lim=ylim, plot=False)
-    # star_ds(laser_points, start_position)
-    # plt.cla()
     star_rep = StarshapedRep((laser_points*resolusion).T, start_position)
     star_rep.draw('test1')
     # [debug]
     # star_rep.draw_gamma()
     # star_rep.draw_normal_vector(filter=True)
 
-
+    # init a graph manager
     graph_manager = GraphManager(star_rep)
-    current_star_id = graph_manager.start_id
+    start_star_id = copy(graph_manager.start_id)
+    current_star_id = copy(graph_manager.start_id)
     path, reach = graph_manager.find_path(current_star_id, goal_position)
-    id = path['path_id'][-1]
+    local_id = path['path_id'][-1]
     local_position = path['path'][-1]
    
-    # modulation_velocity(start_position, goal_position, graph_manager)
-    # bias = np.array([0.9284,0.3713])
     bias = np.array([0, 0])
-    temp_position = np.array([3.5, 8.0])
+    temp_position = np.array([3.0, 6.0])
     new_position = start_position + bias
     init_velocity = np.array([0.0, 0.0])
     
@@ -457,10 +457,17 @@ if __name__ == '__main__':
     iter = 0
     interval = 2
 
-    # generate a color
-    color = np.random.rand(3,)
+    # judge if the robot is staying in the local position too long
+    local_position_init = 0.2
+    local_position_limit = copy(local_position_init)
+    local_relax = False
+    local_position_count = 0
+    local_position_count_lim = 10
 
-    while not reach_global and iter < 300:
+    # generate a color
+    # color = np.random.rand(3,)
+
+    while not reach_global and iter < 500:
         new_velocity = modulation_velocity(new_position, local_position, graph_manager)
         modulated_position = new_velocity + new_position
         # plot the arrow of the new velocity
@@ -469,18 +476,24 @@ if __name__ == '__main__':
         # print('velocity', init_velocity, new_velocity, modulated_position)
 
         # normalize the new_velocity
+        last_new_position = copy(new_position)
         new_velocity = new_velocity / np.linalg.norm(new_velocity)
         new_position = new_position + new_velocity * 1/update_hz
         
         if iter % interval == 0:
+            plt.scatter(new_position[0], new_position[1], c='r', s=10)
             plt.arrow(new_position[0], new_position[1], new_velocity[0], new_velocity[1], head_width=0.1, head_length=0.1, fc='black', ec='black', animated=True)
 
         iter += 1
 
         # judge if reach the local position
-        if np.linalg.norm(local_position - new_position) < 0.2 and \
+        if np.linalg.norm(local_position - new_position) < local_position_limit and \
             np.linalg.norm(local_position - goal_position) > 0.001:
+            print('reach the local position')
             reach_local = True
+            if local_relax:
+                local_position_limit = copy(local_position_init)
+                local_relax = False
 
         # judge if reach the global position
         if np.linalg.norm(goal_position - new_position) < 0.1:
@@ -496,9 +509,11 @@ if __name__ == '__main__':
             laser_points = de_obs['point']
 
             find_obstacle = False
+            in_other_starshape = False
             # judge if there are points around the local goal
             for i in range(len(laser_points)):
-                if np.linalg.norm(laser_points[i] - laser_points) < 0.1:
+                if np.linalg.norm(laser_points[i] - local_position) < 0.3:
+                    print('remove the obstacle', np.linalg.norm(laser_points[i] - local_position))
                     find_obstacle = True
                     # remove the node in the graph
                     graph_manager.remove_node(id)
@@ -510,20 +525,32 @@ if __name__ == '__main__':
                     break
 
             if not find_obstacle:
+                print('extend obstacle')
                 # laser_points = laser_points.tolist()
                 star_rep = StarshapedRep((laser_points*resolusion).T, new_position)
-                graph_manager.extend_star_node(current_star_id, star_rep)
+                graph_manager.extend_star_node(local_id, star_rep)
+                current_star_id = copy(local_id)
                 star_rep.draw('test1')
-                path, reach = graph_manager.find_path(1, goal_position)
-                id = path['path_id'][-1]
+                path, reach = graph_manager.find_path(current_star_id, goal_position)
+                local_id = path['path_id'][-1]
                 local_position = path['path'][-1]
             
             reach_local = False
             
-        print('local position', local_position)
+        print('local position', iter, local_position, new_position, np.linalg.norm(last_new_position - new_position))
+        # if staying in position too long, relax the local judge condition
+        # if np.linalg.norm(last_new_position - new_position) < 0.1:
+        #     local_position_count += 1
+        #     if local_position_count > local_position_count_lim:
+        #         local_relax = True
+        #         local_position_limit += 0.1
+        #         local_position_count = 0
+        # else:
+        #     local_position_count = 0
 
         if iter % interval == 0:
-            plt.savefig('finding_path.png', dpi=300)
+            plt.axis('equal')
+            plt.savefig('results/finding_path'+str(iter)+'.png', dpi=300)
 
     
 

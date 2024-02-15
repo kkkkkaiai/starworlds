@@ -57,7 +57,7 @@ class StarshapedRep:
 
     def get_frontier_points(self, 
                             robot_radius=0.8, 
-                            min_samples=2, # dbscan parameter
+                            min_samples=3, # dbscan parameter
                             ):
         dbscan = DBSCAN(eps=robot_radius, min_samples=min_samples)
         filter_points = np.array(self.points)
@@ -142,6 +142,15 @@ class StarshapedRep:
                 right = 0
             frontier_points.append((sorted_points[left] + sorted_points[right]) / 2)
 
+        # project the frontier point on the boundary
+        for i in range(len(frontier_points)):
+            # calcute the angle of the frontier point
+            theta = np.arctan2(frontier_points[i][1] - self.center[1], frontier_points[i][0] - self.center[0])
+            if theta < 0:
+                theta += 2*np.pi
+            distance, _ = self.radius(theta)
+            frontier_points[i] = self.center + distance * np.array([np.cos(theta), np.sin(theta)])
+
         self.frontier_points = np.array(frontier_points)
         self.sorted_points = np.array(sorted_points)
         # print(sorted_points)
@@ -153,10 +162,10 @@ class StarshapedRep:
 
         if theta < 0:
             theta += 2*np.pi
-        range, deri = self.radius(theta)
+        distance, deri = self.radius(theta)
 
-        x_dot = deri * np.sin(theta) + range * np.cos(theta)
-        y_dot = deri * np.cos(theta) - range * np.sin(theta)
+        x_dot = deri * np.sin(theta) + distance * np.cos(theta)
+        y_dot = deri * np.cos(theta) - distance * np.sin(theta)
 
         # print('theta normal vector', theta, normal_vector)
 
@@ -271,7 +280,7 @@ class StarshapedRep:
         # plt.savefig(name+'normal.png', dpi=300)
 
 
-    def draw(self, name='test', save=False):
+    def draw(self, name='test', color=None, save=False):
 
         y1 = polynomic_func_9(self.x1, *self.popt1)
         y2 = polynomic_func_9(self.x2, *self.popt2)
@@ -301,10 +310,11 @@ class StarshapedRep:
         # generate a random color
         color = np.random.rand(3,)
         plt.plot(re_starshaped_points[0:, 0], re_starshaped_points[0:, 1], label='fit')
-        # plot the starshaped points
+        
+        # plot the raw points
         # plt.scatter(self.points[0:-1, 0], self.points[0:-1, 1], label='raw')
         # plot dbscan result
-        # plt.scatter(self.points[:, 0], self.points[:, 1], c=self.labels, label='dbscan', s=5)
+        plt.scatter(self.points[:, 0], self.points[:, 1], c=self.labels, label='dbscan', s=5)
         # plt.scatter(self.points[:, 0], self.points[:, 1], c=color, label='dbscan', s=5)
     
         # plot the center point
@@ -314,9 +324,9 @@ class StarshapedRep:
         plt.plot(self.frontier_points[:, 0], self.frontier_points[:, 1], 'k+', label='frontier points')
         # scatter frontier points with color and plus symbol
         plt.scatter(self.frontier_points[:, 0], self.frontier_points[:, 1], c='r', label='frontier points', s=10)
+        
         # the sides points
         plt.plot(self.sorted_points[:, 0], self.sorted_points[:, 1], 'y+', label='sorted points', scalex=20, scaley=20)
-        plt.axis('equal')
         
         if save:
             plt.savefig(name+'_starshaped_fit_retrive.png', dpi=300)

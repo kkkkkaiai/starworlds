@@ -91,8 +91,17 @@ class GraphManager:
         # traverse all the node in the graph and find the nearest node to the goal point without stuck
         nearest_node_id = None
         for node_id in self._nodes:
+            # if the node is stuck, skip
             if self._nodes[node_id].is_stuck():
                 continue
+            # if the node is starshaped node, the goal should in this node; otherwise, starshaped node should be the nearest node
+            if self._nodes[node_id].is_starshape():
+                if self._nodes[node_id].is_in_star(goal_point):
+                    nearest_node_id = node_id
+                    break
+                else:
+                    continue
+
             if nearest_node_id is None:
                 nearest_node_id = node_id
             elif np.linalg.norm(goal_point - self._nodes[node_id]._point) < np.linalg.norm(goal_point - self._nodes[nearest_node_id]._point):
@@ -176,12 +185,17 @@ class GraphManager:
         frontier_points = star_rep.frontier_points
         for i in range(len(frontier_points)):
             # check the frontier points is in the other starshaped polygon
+            in_other_star = False
             for j in range(len(self._star_id_list)):
+                print(self._star_id_list[j], frontier_points[i], self._nodes[self._star_id_list[j]].is_in_star(frontier_points[i]))
                 if self._nodes[self._star_id_list[j]].is_in_star(frontier_points[i]):
-                    continue
-            new_id = self.gen_id()
-            self.add_node(node_id, new_id)
-            self._nodes[new_id] = Node(frontier_points[i])
+                    in_other_star = True
+                    break
+            
+            if not in_other_star:
+                new_id = self.gen_id()
+                self.add_node(node_id, new_id)
+                self._nodes[new_id] = Node(frontier_points[i])
         
         self._star_id_list.append(node_id)
             
@@ -197,6 +211,12 @@ class GraphManager:
     def add_node(self, node_id, neighbor_id):
         self._edges[node_id].append(neighbor_id)
         self._edges[neighbor_id].append(node_id)
+
+    def remove_node(self, node_id):
+        for neighbor_id in self._edges[node_id]:
+            self._edges[neighbor_id].remove(node_id)
+        del self._edges[node_id]
+        del self._nodes[node_id]
 
 
 
