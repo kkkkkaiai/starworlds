@@ -1,30 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import time
 
 from scipy.ndimage import gaussian_filter1d
 from scipy.optimize import curve_fit
 from sklearn.cluster import DBSCAN
-
 
 def polynomic_func_9(x, a, b, c, d, e, f, g, h, i, j):
     return a * x**9 + b * x**8 + c * x**7 + d * x**6 + e * x**5 + f * x**4 + g * x**3 + h * x**2 + i * x + j
 
 def deri_polynomic_func_9(x, a, b, c, d, e, f, g, h, i, j):
     return 9 * a * x**8 + 8 * b * x**7 + 7 * c * x**6 + 6 * d * x**5 + 5 * e * x**4 + 4 * f * x**3 + 3 * g * x**2 + 2 * h * x + i
-
-def polynomic_func_5(x, a, b, c, d, e, f):
-    return a * x**5 + b * x**4 + c * x**3 + d * x**2 + e * x + f
-
-def deri_polynomic_func_5(x, a, b, c, d, e, f):
-    return 5 * a * x**4 + 4 * b * x**3 + 3 * c * x**2 + 2 * d * x + e
-
-def polynomic_func_3(x, a, b, c, d):
-    return a * x**3 + b * x**2 + c * x + d
-
-def deri_polynomic_func_3(x, a, b, c, d):
-    return 3 * a * x**2 + 2 * b * x + c
-
 
 class StarshapedRep:
     def __init__(self, points, center, theta=0.0) -> None:
@@ -34,110 +19,43 @@ class StarshapedRep:
         self.points = points.T
         self.center = self.reference_point = center
 
-        self.segment_idxs = None
-        self.segment_thetas = None
-
-        self.popts = []
-        self.pcovs = []
-
         self.theta = theta
         self.starshaped_fit()
         self.get_frontier_points()
 
         # self.draw()
 
-    def starshaped_fit(self, segment=5, padding=3):
+    def starshaped_fit(self, segment=5, padding=8):
         starshaped_range = np.array([np.linalg.norm(self.points[i] - self.center) for i in range(len(self.points))])
 
         # gaussian smooth
-        self.starshaped_range = gaussian_filter1d(starshaped_range, sigma=3.0)
+        self.starshaped_range = gaussian_filter1d(starshaped_range, sigma=1)
 
         # self.starshaped_range = starshaped_range
 
         self.x = np.linspace(0, 2*np.pi, len(self.starshaped_range))
         self.y = self.starshaped_range.flatten()  
 
-        # adaptive segment, if the derivative is too large, generate a new segment
-        last_deri = None
-        self.segment_idxs = []
-        self.segment_thetas = []    
-
-        for i in range(1, len(self.x)):
-            deri = np.arctan2(self.y[i] - self.y[i-1], self.x[i] - self.x[i-1])
-            if last_deri is not None and abs(deri - last_deri) > np.pi/20:
-                self.segment_idxs.append(i)
-                self.segment_thetas.append(self.x[i])
-            last_deri = deri
-        print(self.segment_idxs, len(self.segment_idxs))
-
-        start_time = time.time()
         # segment data to 5 parts
-        segment_num = len(self.segment_idxs) 
-        x_sets = []
-        y_sets = []
-        for i in range(segment_num):
-            # assign data with padding
-            if i == 0:
-                x_data = self.x[0:self.segment_idxs[i]+padding]
-                x_data = np.concatenate((self.x[-padding: 1], x_data), axis=0)
-                x_sets.append(x_data)
-                y_data = self.y[0:self.segment_idxs[i]+padding]
-                y_data = np.concatenate((self.y[-padding: 1], y_data), axis=0)
-                y_sets.append(y_data)
-            else:
-                left_idx = self.segment_idxs[i-1]-padding
-                right_idx = self.segment_idxs[i]+padding
-                if left_idx < 0:
-                    x_data = self.x[left_idx:]
-                    x_data = np.concatenate((x_data, self.x[0:right_idx]), axis=0)
-                    y_data = self.y[left_idx:]
-                    y_data = np.concatenate((y_data, self.y[0:right_idx]), axis=0)
-                else:
-                    x_data = self.x[left_idx:right_idx]
-                    y_data = self.y[left_idx:right_idx]
-                x_sets.append(x_data)
-                y_sets.append(y_data)
+        segment_num = len(starshaped_range) // segment
+        self.x1 = self.x[0:segment_num]
+        self.x1 = np.concatenate((self.x[-padding: 1], self.x1), axis=0)
+        self.y1 = self.y[0:segment_num]
+        self.y1 = np.concatenate((self.y[-padding: 1], self.y1), axis=0)
+        self.x2 = self.x[segment_num-padding:segment_num*2+padding]
+        self.y2 = self.y[segment_num-padding:segment_num*2+padding]
+        self.x3 = self.x[segment_num*2-padding:segment_num*3+padding]
+        self.y3 = self.y[segment_num*2-padding:segment_num*3+padding]
+        self.x4 = self.x[segment_num*3-padding:segment_num*4+padding]
+        self.y4 = self.y[segment_num*3-padding:segment_num*4+padding]
+        self.x5 = self.x[segment_num*4-padding:segment_num*5+padding]
+        self.y5 = self.y[segment_num*4-padding:segment_num*5+padding]
 
-        # add the last segment
-        x_data = self.x[self.segment_idxs[-1]-padding:]
-        x_data = np.concatenate((x_data, self.x[0:padding]), axis=0)
-        x_sets.append(x_data)
-        y_data = self.y[self.segment_idxs[-1]-padding:]
-        y_data = np.concatenate((y_data, self.y[0:padding]), axis=0)
-        y_sets.append(y_data)
-
-        # self.x1 = self.x[0:segment_num]
-        # self.x1 = np.concatenate((self.x[-padding: 1], self.x1), axis=0)
-        # self.y1 = self.y[0:segment_num]
-        # self.y1 = np.concatenate((self.y[-padding: 1], self.y1), axis=0)
-        # self.x2 = self.x[segment_num-padding:segment_num*2+padding]
-        # self.y2 = self.y[segment_num-padding:segment_num*2+padding]
-        # self.x3 = self.x[segment_num*2-padding:segment_num*3+padding]
-        # self.y3 = self.y[segment_num*2-padding:segment_num*3+padding]
-        # self.x4 = self.x[segment_num*3-padding:segment_num*4+padding]
-        # self.y4 = self.y[segment_num*3-padding:segment_num*4+padding]
-        # self.x5 = self.x[segment_num*4-padding:segment_num*5+padding]
-        # self.y5 = self.y[segment_num*4-padding:segment_num*5+padding]
-        self.popts = []
-        self.pcovs = []
-
-        for i in range(segment_num):
-            if len(y_sets[i]) < 1:
-                print('error', i, len(y_sets[i]), self.segment_idxs[i]+padding, self.segment_idxs[i-1]-padding)
-                print(self.x[-1:6])
-                print(self.y[0:5])
-            popt, pcov = curve_fit(polynomic_func_3, x_sets[i], y_sets[i], maxfev=10000)
-            self.popts.append(popt)
-            self.pcovs.append(pcov)
-
-        end = time.time()
-
-        print('fit time', end - start_time)
-        # self.popt1, self.pcov1 = curve_fit(polynomic_func_9, self.x1, self.y1, maxfev=10000)
-        # self.popt2, self.pcov2 = curve_fit(polynomic_func_9, self.x2, self.y2, maxfev=10000)
-        # self.popt3, self.pcov3 = curve_fit(polynomic_func_9, self.x3, self.y3, maxfev=10000)
-        # self.popt4, self.pcov4 = curve_fit(polynomic_func_9, self.x4, self.y4, maxfev=10000)
-        # self.popt5, self.pcov5 = curve_fit(polynomic_func_9, self.x5, self.y5, maxfev=10000)
+        self.popt1, self.pcov1 = curve_fit(polynomic_func_9, self.x1, self.y1, maxfev=10000)
+        self.popt2, self.pcov2 = curve_fit(polynomic_func_9, self.x2, self.y2, maxfev=10000)
+        self.popt3, self.pcov3 = curve_fit(polynomic_func_9, self.x3, self.y3, maxfev=10000)
+        self.popt4, self.pcov4 = curve_fit(polynomic_func_9, self.x4, self.y4, maxfev=10000)
+        self.popt5, self.pcov5 = curve_fit(polynomic_func_9, self.x5, self.y5, maxfev=10000)
 
     def get_frontier_points(self, 
                             robot_radius=0.8, 
@@ -289,22 +207,16 @@ class StarshapedRep:
 
 
     def radius(self, theta):
-        # if theta < self.x1[-1]:
-        #     return polynomic_func_9(theta, *self.popt1), deri_polynomic_func_9(theta, *self.popt1)
-        # elif theta < self.x2[-1]:
-        #     return polynomic_func_9(theta, *self.popt2), deri_polynomic_func_9(theta, *self.popt2)
-        # elif theta < self.x3[-1]:
-        #     return polynomic_func_9(theta, *self.popt3), deri_polynomic_func_9(theta, *self.popt3)
-        # elif theta < self.x4[-1]:
-        #     return polynomic_func_9(theta, *self.popt4), deri_polynomic_func_9(theta, *self.popt4)
-        # else:
-        #     return polynomic_func_9(theta, *self.popt5), deri_polynomic_func_9(theta, *self.popt5)
-        for i in range(len(self.segment_thetas)):
-            # print(i, len(self.popts))
-            if theta < self.segment_thetas[i]:
-                return polynomic_func_3(theta, *self.popts[i]), deri_polynomic_func_3(theta, *self.popts[i])
-        
-        return polynomic_func_3(theta, *self.popts[-1]), deri_polynomic_func_3(theta, *self.popts[-1])
+        if theta < self.x1[-1]:
+            return polynomic_func_9(theta, *self.popt1), deri_polynomic_func_9(theta, *self.popt1)
+        elif theta < self.x2[-1]:
+            return polynomic_func_9(theta, *self.popt2), deri_polynomic_func_9(theta, *self.popt2)
+        elif theta < self.x3[-1]:
+            return polynomic_func_9(theta, *self.popt3), deri_polynomic_func_9(theta, *self.popt3)
+        elif theta < self.x4[-1]:
+            return polynomic_func_9(theta, *self.popt4), deri_polynomic_func_9(theta, *self.popt4)
+        else:
+            return polynomic_func_9(theta, *self.popt5), deri_polynomic_func_9(theta, *self.popt5)
     
     def get_gamma(self, point, inverted=True, p=1):
         if np.linalg.norm(point - self.center) < 0.0000001:
@@ -372,35 +284,19 @@ class StarshapedRep:
 
     def draw(self, name='test', color=None, save=False):
 
-        # y1 = polynomic_func_9(self.x1, *self.popt1)
-        # y2 = polynomic_func_9(self.x2, *self.popt2)
-        # y3 = polynomic_func_9(self.x3, *self.popt3)
-        # y4 = polynomic_func_9(self.x4, *self.popt4)
-        # y5 = polynomic_func_9(self.x5, *self.popt5)
+        y1 = polynomic_func_9(self.x1, *self.popt1)
+        y2 = polynomic_func_9(self.x2, *self.popt2)
+        y3 = polynomic_func_9(self.x3, *self.popt3)
+        y4 = polynomic_func_9(self.x4, *self.popt4)
+        y5 = polynomic_func_9(self.x5, *self.popt5)
 
-        # plt.plot(self.x1, y1, 'r-', label="Fitted Curve poly")
-        # plt.plot(self.x2, y2, 'g-', label="Fitted Curve poly")
-        # plt.plot(self.x3, y3, 'b-', label="Fitted Curve poly")
-        # plt.plot(self.x4, y4, 'y-', label="Fitted Curve poly")
-        # plt.plot(self.x5, y5, 'b-', label="Fitted Curve poly")
-
-        # plot fitted curve
-        # for i in range(len(self.segment_idxs)):
-        #     if i == 0:
-        #         x = np.linspace(0, self.segment_thetas[i], 50)
-        #         y = polynomic_func_3(x, *self.popts[i])
-        #         plt.plot(x, y, 'r-', label="Fitted Curve poly")
-        #     elif i == len(self.segment_idxs) - 1:
-        #         x = np.linspace(self.segment_thetas[i-1], 2*np.pi, 50)
-        #         y = polynomic_func_3(x, *self.popts[i])
-        #         plt.plot(x, y, 'r-', label="Fitted Curve poly")
-        #     else:
-        #         x = np.linspace(self.segment_thetas[i-1], self.segment_thetas[i], 50)
-        #         y = polynomic_func_3(x, *self.popts[i])
-        #         plt.plot(x, y, 'r-', label="Fitted Curve poly")
-
-        # plt.scatter(self.x, self.y, s=5, label="Fitted Curve poly")
-        # plt.savefig("starshaped_fit.png", dpi=300)
+        plt.plot(self.x1, y1, 'r-', label="Fitted Curve poly")
+        plt.plot(self.x2, y2, 'g-', label="Fitted Curve poly")
+        plt.plot(self.x3, y3, 'b-', label="Fitted Curve poly")
+        plt.plot(self.x4, y4, 'y-', label="Fitted Curve poly")
+        plt.plot(self.x5, y5, 'b-', label="Fitted Curve poly")
+        plt.scatter(self.x, self.y, s=5, label="Fitted Curve poly")
+        plt.savefig("starshaped_fit.png", dpi=300)
         # plt.cla()
 
         re_starshaped_points = []

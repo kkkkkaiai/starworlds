@@ -402,27 +402,29 @@ if __name__ == '__main__':
     pM = PathManager(gridmap)
 
     # init robot
-    start_position = np.array([7.5, 2.5])
-    goal_position = np.array([8, 12.0])
+    start_position = np.array([8.0, 2.0])
+    goal_position = np.array([2.0, 12.0])
     robot_c = start_position
     robot_yaw = 0.0
     
     # init laser
-    laser = Laser(beams=128, laser_length=10)
+    laser = Laser(beams=1024, laser_length=10)
     laser.set_map(gridmap)
     laser_detect_range = laser.max_detect_distance()
 
     # plot params
     plt.cla()
     fig = plt.figure(figsize=(10, 10))
+    xlim = [-1, 7]
+    ylim = [-1, 10]
     plt.xlim(xlim)
     plt.ylim(ylim)
 
     # plot a sparse map
-    for i in range(xlim[0], xlim[1]):
-        for j in range(ylim[0], ylim[1]):
-            if gridmap.is_occupied((i, j)):
-                plt.plot(i, j, 'k.')
+    # for i in range(xlim[0], xlim[1]):
+    #     for j in range(ylim[0], ylim[1]):
+    #         if gridmap.is_occupied((i, j)):
+    #             plt.plot(i, j, 'k.')
 
     # generate laser points and starshaped representation
     de_obs = laser.state2obs(robot_c, robot_yaw, False)
@@ -434,6 +436,7 @@ if __name__ == '__main__':
 
     star_rep = StarshapedRep((laser_points*resolusion).T, start_position)
     star_rep.draw('test1')
+    # exit()
     # [debug]
     # star_rep.draw_gamma()
     # star_rep.draw_normal_vector(filter=True)
