@@ -11,4 +11,6 @@
 11√. give a goal and reach it
 12√. improve fitting result
 13√. project the frontier point on the boundary
-12. do experiment in gazebo
+14√. fix error rotation in real environment
+15. skip checking in the current starshaped
+15. do experiment in gazebo

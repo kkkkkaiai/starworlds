@@ -7,6 +7,7 @@ from starshaped_hull.starshaped_fit import StarshapedRep
 
 class Node:
     def __init__(self, point, type=1) -> None:
+        # point is the position of the node
         self._point = point
         self._type = type # 0 is starshaped node, 1 is frontier node
         self._valid = True
@@ -32,6 +33,9 @@ class Node:
     
     def get_gamma(self, point):
         return self._star_rep.get_gamma(point)
+    
+    def get_radius(self, point):
+        return self._star_rep.get_radius(point)
 
     def star_rep(self, star_rep, id):
         self._star_rep = star_rep
@@ -63,15 +67,23 @@ class GraphManager:
 
     def initial(self, root):
         self.start_id = self.gen_id()
-        self._star_id_list.append(self.start_id)
         self._nodes[self.start_id] = Node(root.center)
         self._nodes[self.start_id].star_rep(root, self.start_id)
         frontier_points = root.frontier_points
         for i in range(len(frontier_points)):
-            new_id = self.gen_id()
-            self.add_node(self.start_id, new_id)
-            self._nodes[new_id] = Node(frontier_points[i])
+            # check the frontier points is in the other starshaped polygon
+            in_other_star = False
+            for j in range(len(self._star_id_list)):
+                if self._nodes[self._star_id_list[j]].is_in_star(frontier_points[i]):
+                    in_other_star = True
+                    break
 
+            if not in_other_star:
+                new_id = self.gen_id()
+                self.add_node(self.start_id, new_id)
+                self._nodes[new_id] = Node(frontier_points[i])
+        
+        self._star_id_list.append(self.start_id)
         self.initial = True
 
     def find_path(self, in_star_id, goal_point):
@@ -179,9 +191,10 @@ class GraphManager:
 
         return path, reach_goal
 
-    def extend_star_node(self, node_id, star_rep):
+    def extend_star_node(self, node_id, star_rep, new_position):
         # node_id is the id of current node
         self._nodes[node_id].star_rep(star_rep, node_id)
+        self._nodes[node_id]._point = new_position
         frontier_points = star_rep.frontier_points
         for i in range(len(frontier_points)):
             # check the frontier points is in the other starshaped polygon

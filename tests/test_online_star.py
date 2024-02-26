@@ -6,6 +6,7 @@ from envs.gridmap import OccupancyGridMap
 from planner.path_generator.astar import a_star
 from planner.trajectory_generator.spline_interpolate import *
 from starshaped_hull.graph import GraphManager
+from dynamic_system.modulation import modulation_velocity
 
 from sensors.laser_anyshape import Laser
 from sklearn.cluster import DBSCAN
@@ -15,400 +16,105 @@ from typing import Optional
 from copy import copy
 
 import warnings
+import time
 import numpy as np
 import numpy.linalg as LA
 import matplotlib.pyplot as plt
 import numpy.typing as npt
 
-resolusion = 0.05
 
-class PathManager:
-    def __init__(self, gridmap, start_node=(6.0, 3.0), end_node=(16.0, 16.0)) -> None:
-        self._map = gridmap
-        self._resolution = self._map.cell_size
-        self._start_node = start_node
-        self._end_node = end_node
-        self._path = None
-        self._path_px = None
+def evaluation_modulation_result(x_lim, y_lim, graph_manager, local_position):
+    # draw the starshaped polygon
+    plt.cla()
+    starshaped_ids = graph_manager._star_id_list
+    for i in range(len(starshaped_ids)):
+        star_id = starshaped_ids[i]
+        star = graph_manager._nodes[star_id]._star_rep
+        star.draw('test'+str(i))
 
-    def find_path(self, start_node, end_node):
-        # run A*
-        self._start_node = start_node
-        self._end_node = end_node
-        self._path, self._path_px = a_star(self._start_node, self._end_node, self._map, movement='8N')
-        self._path = np.asarray(self._path) / self._resolution
-        return self._path
+    x = np.arange(x_lim[0], x_lim[1]+5, 0.15)
+    y = np.arange(y_lim[0], y_lim[1]+5, 0.15)
+    print(len(x), len(y))
+    for i in range(len(x)):
+        for j in range(len(y)):
+            cur_position = np.array([x[i], y[j]])
+            # if the gamma is less than 1, continue
+            # if graph_manager._nodes[starshaped_ids[0]]._star_rep.get_gamma(cur_position) < 1:
+            #     continue
+
+            new_velocity, _ = modulation_velocity(cur_position, local_position, graph_manager)
+            # normal
+            new_velocity = new_velocity / np.linalg.norm(new_velocity) *0.1
+
+            plt.arrow(cur_position[0], cur_position[1], new_velocity[0], new_velocity[1], head_width=0.01, head_length=0.01, fc='black', ec='black')
+    plt.axis('equal')
+    plt.savefig('evaluation_result.png', dpi=300)
+
+
+def modulation_round_robot(position, local_position, graph_manager, safety_margin=0.5):
+    # calculate the gamma of current position
+    current_velocity, current_min_Gamma = modulation_velocity(position, local_position, graph_manager)
+    current_velocity = current_velocity / np.linalg.norm(current_velocity)
+
+    # front, left, right point
+    front_point = position + current_velocity * safety_margin
+    left_point = position + np.array([-current_velocity[1], current_velocity[0]]) * safety_margin
+    right_point = position + np.array([current_velocity[1], -current_velocity[0]]) * safety_margin
+    print('point', front_point, left_point, right_point)
+
+    # the gamma of the front, left and right point
+    front_velocity, front_min_Gamma = modulation_velocity(front_point, local_position, graph_manager)
+    left_velocity, left_min_Gamma = modulation_velocity(left_point, local_position, graph_manager)
+    right_velocity, right_min_Gamma = modulation_velocity(right_point, local_position, graph_manager)
     
-    def find_gradient(self):
-        '''
-        find the index of which the gradient is larger than a threshold
-        '''
-        path_index = []
-        for i in range(1, len(self._path)-1):
-            if abs(np.linalg.norm(self._path[i]-self._path[i-1]) - \
-                   np.linalg.norm(self._path[i+1]-self._path[i])) > 0.2:
-                path_index.append(i-1)
-        path_index.append(len(self._path)-1)
-        return self._path[path_index]
-    
-    def is_path_found(self):
-        return self._path is not None
-    
-    def spline_interpolate(self, path=None, ds=0.1):
-        if path is None:
-            path = self._path
-        cx, cy, cyaw, ck, s = calc_spline_course(path[:, 0]*self._resolution, path[:, 1]*self._resolution, ds=ds)
-        self._sp = calc_speed_profile(cx, cy, cyaw, 10)
-        self._ref_path = PATH(cx, cy, cyaw, ck)
-        print('Path length: ', len(path), 'Interpolated path length: ', self._ref_path.length)
-        return self._ref_path, self._sp
+    if current_min_Gamma == np.inf:
+        current_min_Gamma = 1e10
+    if front_min_Gamma == np.inf:
+        front_min_Gamma = 1e10
+    if left_min_Gamma == np.inf:
+        left_min_Gamma = 1e10
+    if right_min_Gamma == np.inf:
+        right_min_Gamma = 1e10
 
-    def plot_map(self):
-        self._map.plot()
-
-    def plot_path(self):
-        if self.is_path_found():
-            plot_path(self._path, linestyle='--', label='origin path')
-        else:
-            # plot start and goal points over the map (in pixels)
-            start_node_px = self._map.get_index_from_coordinates(self._start_node[0], self._start_node[1])
-            goal_node_px = self._map.get_index_from_coordinates(self._end_node[0], self._end_node[1])
-
-            plt.plot(start_node_px[0], start_node_px[1], 'ro')
-            plt.plot(goal_node_px[0], goal_node_px[1], 'go')
-            raise ValueError('Path is not found')
-        
-    def plot_interpolated_path(self):
-        try:
-            if self._ref_path is not None:
-
-                plot_path(np.array([np.array(self._ref_path.cx)/self._resolution, np.array(self._ref_path.cy)/self._resolution]).T, \
-                          color='cyan', label='interpolated path')
-        except:
-            print('Not do interpolation yet, please call spline_interpolate() first')
-
-
-def compute_weight(Gamma, dist_limit=1.0, weight_pow=1.0):
-    distances = np.array(Gamma)
-    critical_points = distances >= dist_limit
-
-    if np.sum(critical_points):
-        if np.sum(critical_points) == 1:
-            w =  critical_points * 1.0
-            return w
-        else:
-            w = critical_points * 1.0 / np.sum(critical_points)
-            return w
-    
-    distances = distances - dist_limit
-    w = (1 / distances) ** weight_pow
-    if np.sum(w) == 0:
-        return w
-    w = w / np.sum(w)
-
-    return w
-
-
-def compute_diagonal_matrix(
-    Gamma,
-    dim,
-    rho=1,
-    repulsion_coeff=1.0,
-    tangent_eigenvalue_isometric=True,
-    tangent_power=5,
-    treat_obstacle_special=True,
-    self_priority=1,
-):
-    # print('Gamma ', Gamma)
-
-    """Compute diagonal Matrix"""
-    if Gamma <= 1 and treat_obstacle_special:
-        # Point inside the obstacle
-        delta_eigenvalue = 1
+    # computing weight based on the Gamma value
+    weight_temp = np.array([front_min_Gamma, left_min_Gamma, right_min_Gamma, current_min_Gamma])
+    # filter the weight with the lower of 1.05
+    weight = copy(weight_temp)
+    weight_import = np.where(weight_temp <= 1.05)
+    print(weight_import, weight)
+    weight_temp = np.zeros(4)
+    if len(weight_import[0]) != 0:
+        for i in range(len(weight_import[0])):
+            weight_temp[weight_import[0][i]] = weight[weight_import[0][i]]
     else:
-        delta_eigenvalue = 1.0 / abs(Gamma) ** (self_priority / rho)
-    eigenvalue_reference = 1 - delta_eigenvalue * repulsion_coeff
-
-    if tangent_eigenvalue_isometric:
-        eigenvalue_tangent = 1 + delta_eigenvalue
-    else:
-        # Decreasing velocity in order to reach zero on surface
-        eigenvalue_tangent = 1 - 1.0 / abs(Gamma) ** tangent_power
-    return np.diag(
-        np.hstack((eigenvalue_reference, np.ones(dim - 1) * eigenvalue_tangent))
-    )
-
-
-# @lru_cache(maxsize=10)
-# TODO: expand cache for this [numpy-arrays]
-# TODO: OR make cython
-def get_orthogonal_basis(vector: np.ndarray, normalize: bool = True) -> np.ndarray:
-    """Get Orthonormal basis matrxi for an dimensional input vector."""
-    # warnings.warn("Basis implementation is not continuous.") (?! problem?)
-    if not (vector_norm := np.linalg.norm(vector)):
-        warnings.warn("Zero norm-vector.")
-        return np.eye(vector.shape[0])
-
-    vector = vector / vector_norm
-
-    dim = vector.shape[0]
-    if dim <= 1:
-        return vector.reshape((dim, dim))
-
-    basis_matrix = np.zeros((dim, dim))
-
-    if dim == 2:
-        basis_matrix[:, 0] = vector
-        basis_matrix[:, 1] = np.array([-basis_matrix[1, 0], basis_matrix[0, 0]])
-    else:
-        # exit
-        warnings.warn("Basis dim>2 implementation is not continuous.")
-        exit()
-
-    return basis_matrix
-
-
-class UnitDirectionError(Exception):
-    def __init__(self, message="Error with Unit Direction Handling"):
-        self.message = message
-        super().__init__(self.message)
-
-    def __str__(self):
-        return f"{self.message}"
-
-
-def get_directional_weighted_sum(
-    null_direction: np.ndarray,
-    weights: npt.ArrayLike,
-    directions: np.ndarray,
-    unit_directions: list[np.ndarray] = None,
-    total_weight: float = 1,
-    normalize: bool = True,
-    normalize_reference: bool = True,
-) -> np.ndarray:
-    """Weighted directional mean for inputs vector ]-pi, pi[ with respect to the null_direction
-
-    Parameters
-    ----------
-    null_direction: basis direction for the angle-frame
-    directions: the directions which the weighted sum is taken from
-    unit_direction: list of unit direction
-    weights: used for weighted sum
-    total_weight: [<=1]
-    normalize: variable of type Bool to decide if variables should be normalized
-
-    Return
-    ------
-    summed_velocity: The weighted sum transformed back to the initial space
-    """
-    # TODO: this can be vastly speed up by removing the 'unit directions'
-    weights = np.array(weights)
-
-    ind_nonzero = np.logical_and(
-        weights > 0, LA.norm(directions, axis=0)
-    )  # non-negative
-
-    null_direction = np.copy(null_direction)
-    directions = directions[:, ind_nonzero]
-    weights = weights[ind_nonzero]
-
-    if total_weight > 1:
-        weights = weights / np.sum(weights) * total_weight
-
-    n_directions = weights.shape[0]
-    if (n_directions == 1) and np.sum(weights) >= 1:
-        return directions[:, 0] / LA.norm(directions[:, 0])
-
-    dim = np.array(null_direction).shape[0]
-
-    base = get_orthogonal_basis(vector=null_direction)
-    if unit_directions is None:
-        unit_directions = [
-            UnitDirection(base).from_vector(directions[:, ii])
-            for ii in range(directions.shape[1])
-        ]
-    else:
-        for u_dir in unit_directions:
-            u_dir.transform_to_base(base)
-
-    summed_dir = UnitDirection(base).from_angle(np.zeros(dim - 1))
-    for ii, u_dir in enumerate(unit_directions):
-        summed_dir = summed_dir + u_dir * weights[ii]
-
-    if True:
-        return summed_dir.as_vector()
-
-def compute_decomposition_matrix(obs, x_t):
-    """Compute decomposition matrix and orthogonal matrix to basis"""
-    normal_vector = obs._star_rep.get_normal_direction(x_t)
-    reference_direction = obs._star_rep.get_reference_direction(x_t)
+        weight_temp = copy(weight)
+    print(weight_temp)
+    weight = weight_temp / np.sum(weight_temp)
     
-    # dot_prod = np.dot(normal_vector, reference_direction)
-
-    E_orth = get_orthogonal_basis(normal_vector, normalize=True)
-    E = np.copy((E_orth))
-    # plot the reference direction, orthogonal vector and normal vector
-    # plt.arrow(x_t[0], x_t[1], reference_direction[0], reference_direction[1], head_width=0.1, head_length=0.1, fc='b', ec='b')
-    # plt.arrow(x_t[0], x_t[1], E_orth[0, 1], E_orth[1, 1], head_width=0.2, head_length=0.1, fc='y', ec='y')
-    # plt.arrow(x_t[0], x_t[1], normal_vector[0], normal_vector[1], head_width=0.1, head_length=0.1, fc='g', ec='g')
-
-    # [debug reference direction]
-    # print('ref', x_t, reference_direction, normal_vector)
-    E[:, 0] = -reference_direction
-
-    return E, E_orth
-
-def get_relative_obstacle_velocity(
-    position: np.ndarray,
-    obstacle_list,
-    E_orth: np.ndarray,
-    weights: list,
-    ind_obstacles: Optional[int] = None,
-    gamma_list: Optional[list] = None,
-    cut_off_gamma: float = 1e4,
-    velocity_only_in_positive_normal_direction: bool = True,
-    normal_weight_factor: float = 1.3,
-) -> np.ndarray:
-    """Get the relative obstacle velocity
-
-    Parameters
-    ----------
-    E_orth: array which contains orthogonal matrix with repsect to the normal
-    direction at <position>
-    array of (dimension, dimensions, n_obstacles
-    obstacle_list: list or <obstacle-conainter> with obstacles
-    ind_obstacles: Inidicates which obstaces will be considered (array-like of int)
-    gamma_list: Precalculated gamma-values (list of float) -
-                It is adviced to use 'proportional' gamma values, rather
-                than relative ones
-
-    Return
-    ------
-    relative_velocity: array-like of float
-    """
-    n_obstacles = len(obstacle_list)
-
-    if gamma_list is None:
-        gamma_list = np.zeros(n_obstacles)
-        for n in range(n_obstacles):
-            gamma_list[n] = obs[n].get_gamma(position, in_global_frame=True)
-
-    if ind_obstacles is None:
-        ind_obstacles = gamma_list < cut_off_gamma
-        gamma_list = gamma_list[ind_obstacles]
-
-    obs = obstacle_list
-    ind_obs = ind_obstacles
-    dim = position.shape[0]
-
-    xd_obs = np.zeros((dim))
-    for ii, it_obs in zip(range(np.sum(ind_obs)), np.arange(n_obstacles)[ind_obs]):
-        xd_obs_n = np.zeros(dim)
-
-        # The Exponential term is very helpful as it help to avoid
-        # the crazy rotation of the robot due to the rotation of the object
-        if obs[it_obs].is_deforming:
-            weight_deform = np.exp(-1 / 1 * (np.max([gamma_list[ii], 1]) - 1))
-            vel_deformation = obs[it_obs].get_deformation_velocity(pos_relative[:, ii])
-
-            if velocity_only_in_positive_normal_direction:
-                vel_deformation_local = E_orth[:, :, ii].T.dot(vel_deformation)
-                if (vel_deformation_local[0] > 0 and not obs[it_obs].is_boundary) or (
-                    vel_deformation_local[0] < 0 and obs[it_obs].is_boundary
-                ):
-                    vel_deformation = np.zeros(vel_deformation.shape[0])
-
-                else:
-                    vel_deformation = E_orth[:, 0, ii].dot(vel_deformation_local[0])
-
-            xd_obs_n += weight_deform * vel_deformation
-        xd_obs = xd_obs + xd_obs_n * weights[ii]
-    return xd_obs
-
-
-def compute_modulation_matrix(D, E, weight, initial_velocity):
-    # M(x) = E(x)*D(x)*E^(-1)
-    # M = np.zeros((2, 2, len(weight)))
-    vels = np.zeros((2, len(weight)))
-
-    for i in range(len(weight)):
-        # M[:, :, i] = E_orth[:, :, i].dot(D[:, :, i]).dot(np.linalg.inv(E_orth[:, :, i]))
-        # if the first term of D is 1
-        if D[0, 0, i] == 1:
-            relative_vel = initial_velocity
-        else:
-            # print('inv matrix', np.linalg.inv(E[:,:,i]))
-            velocity_temp = np.linalg.pinv(E[:,:,i]).dot(initial_velocity)
-            velocity_temp = D[:,:,i].dot(velocity_temp)
-            relative_vel = E[:,:,i].dot(velocity_temp)
-
-        vels[:, i] = relative_vel
-
-    vel = np.zeros(2)
-    for i in range(len(weight)):
-        vel += np.array(vels[:, i]).T * weight[i]
-
-    return vel.T
-
-def modulation_velocity(position, goal_position, graph_manager):
-    attractive_dir = goal_position - position
-    initial_velocity = attractive_dir / np.linalg.norm(attractive_dir)
-    # print('init velocity', initial_velocity)
-
-    obs_number = len(graph_manager._star_id_list)
-
-    position = np.array(position)
-    Gamma = np.zeros(len(graph_manager._star_id_list))
-    for i in range(len(graph_manager._star_id_list)):
-        id = graph_manager._star_id_list[i]
-        Gamma[i] = graph_manager._nodes[id].get_gamma(position)
-        # [debug GAMMA]
-        # print('gamma', Gamma[i])
-    weight = compute_weight(Gamma)
-    # [debug weight]
-    # print(weight, obs_number)
-
-    E = np.zeros((2, 2, obs_number))
-    D = np.zeros((2, 2, obs_number))
-    E_orth = np.zeros((2, 2, obs_number))
-
-    for n in range(obs_number):
-        D[:, :, n] = compute_diagonal_matrix(Gamma[n], 2)
-        E[:, :, n], E_orth[:, :, n] = compute_decomposition_matrix(graph_manager._nodes[graph_manager._star_id_list[n]], position)
-
-    star_obs_list = []
-    for i in range(len(graph_manager._star_id_list)):
-        star_obs_list.append(graph_manager._nodes[graph_manager._star_id_list[i]]._star_rep)
-
-    # print('D', D)
-    # print('E', E)
-    # print('E_orth', E_orth)
-    new_velocity = compute_modulation_matrix(D, E, weight, initial_velocity)
-    # print(modulation_matrix)
-    # new_velocity = modulation_matrix.dot(initial_velocity)
-
+    # calculate the new velocity
+    new_velocity = front_velocity * weight[0] + left_velocity * weight[1] + right_velocity * weight[2] + current_velocity * weight[3]
+     
     return new_velocity
-    
+
 
 if __name__ == '__main__':
     # map params
-    map_file = 'maps/obstacle_map_occupancy_1.png'
+    map_file = 'maps/obstacle_map_occupancy_2.png'
     resolusion = 0.1
     xlim = [-1, 11]
     ylim = [-1, 17]
     
     # load map
     gridmap = OccupancyGridMap.from_png(map_file, resolusion)
-    pM = PathManager(gridmap)
 
     # init robot
-    start_position = np.array([8.0, 2.0])
-    goal_position = np.array([2.0, 12.0])
+    start_position = np.array([8, 3])
+    goal_position = np.array([9, 13])
     robot_c = start_position
     robot_yaw = 0.0
     
     # init laser
-    laser = Laser(beams=1024, laser_length=10)
+    laser = Laser(beams=512, laser_length=10)
     laser.set_map(gridmap)
     laser_detect_range = laser.max_detect_distance()
 
@@ -419,6 +125,10 @@ if __name__ == '__main__':
     ylim = [-1, 10]
     plt.xlim(xlim)
     plt.ylim(ylim)
+
+    # plot start position and goal position with five-pointed star
+    plt.scatter(start_position[0], start_position[1], c='r', s=200, marker='*', zorder=5)
+    plt.scatter(goal_position[0], goal_position[1], c='g', s=200, marker='*', zorder=5)
 
     # plot a sparse map
     # for i in range(xlim[0], xlim[1]):
@@ -434,7 +144,7 @@ if __name__ == '__main__':
     # laser_points = laser_points[np.linalg.norm(laser_points-robot_c/resolusion, axis=1) < laser_detect_range / resolusion, :]
     # print(laser_points)
 
-    star_rep = StarshapedRep((laser_points*resolusion).T, start_position)
+    star_rep = StarshapedRep((laser_points*resolusion), start_position, robot_radius=0.0) 
     star_rep.draw('test1')
     # exit()
     # [debug]
@@ -450,18 +160,18 @@ if __name__ == '__main__':
     local_position = path['path'][-1]
    
     bias = np.array([0, 0])
-    temp_position = np.array([3.0, 6.0])
+    temp_position = np.array([1.0, 10.0])
     new_position = start_position + bias
     init_velocity = np.array([0.0, 0.0])
     
     reach_local = False
     reach_global = False
-    update_hz = 10
+    update_hz = 40
     iter = 0
-    interval = 2
+    interval = 10
 
     # judge if the robot is staying in the local position too long
-    local_position_init = 0.2
+    local_position_init = 0.1
     local_position_limit = copy(local_position_init)
     local_relax = False
     local_position_count = 0
@@ -469,22 +179,30 @@ if __name__ == '__main__':
 
     # generate a color
     # color = np.random.rand(3,)
+    safety_margin = 0.15
+    local_position_limit = copy(safety_margin)
 
-    while not reach_global and iter < 500:
-        new_velocity = modulation_velocity(new_position, local_position, graph_manager)
-        modulated_position = new_velocity + new_position
-        # plot the arrow of the new velocity
-        attractive_dir = local_position - new_position
-        init_velocity = attractive_dir / np.linalg.norm(attractive_dir)
-        # print('velocity', init_velocity, new_velocity, modulated_position)
+    while not reach_global and iter < 1000:
+        # new_velocity, max_Gamma = modulation_velocity(new_position, local_position, graph_manager, safety_margin)
+        # new_velocity = new_velocity / np.linalg.norm(new_velocity)
+        new_velocity = modulation_round_robot(new_position, local_position, graph_manager, safety_margin)
+
+
+        # if safety_max_Gamma <= 1.2 and safety_max_Gamma > 0.5:
+        #     new_velocity = safety_velocity
+        # # elif safety_max_Gamma < 1.05:
+        # #     # merge new_velocity and safety_velocity with corresponding weight
+        # new_velocity = new_velocity  + safety_velocity * 0
 
         # normalize the new_velocity
         last_new_position = copy(new_position)
         new_velocity = new_velocity / np.linalg.norm(new_velocity)
         new_position = new_position + new_velocity * 1/update_hz
+
+        new_velocity = new_velocity * 0.1
         
         if iter % interval == 0:
-            plt.scatter(new_position[0], new_position[1], c='r', s=10)
+            # plt.scatter(new_position[0], new_position[1], c='black', s=10)
             plt.arrow(new_position[0], new_position[1], new_velocity[0], new_velocity[1], head_width=0.1, head_length=0.1, fc='black', ec='black', animated=True)
 
         iter += 1
@@ -494,12 +212,12 @@ if __name__ == '__main__':
             np.linalg.norm(local_position - goal_position) > 0.001:
             print('reach the local position')
             reach_local = True
-            if local_relax:
-                local_position_limit = copy(local_position_init)
-                local_relax = False
+            # if local_relax:
+            #     local_position_limit = copy(local_position_init)
+            #     local_relax = False
 
         # judge if reach the global position
-        if np.linalg.norm(goal_position - new_position) < 0.1:
+        if np.linalg.norm(goal_position - new_position) < 0.2:
             print('reach the global position')
             reach_global = True
             reach_local = False
@@ -515,7 +233,7 @@ if __name__ == '__main__':
             in_other_starshape = False
             # judge if there are points around the local goal
             for i in range(len(laser_points)):
-                if np.linalg.norm(laser_points[i] - local_position) < 0.3:
+                if np.linalg.norm(laser_points[i] - local_position) < 0.2:
                     print('remove the obstacle', np.linalg.norm(laser_points[i] - local_position))
                     find_obstacle = True
                     # remove the node in the graph
@@ -530,8 +248,8 @@ if __name__ == '__main__':
             if not find_obstacle:
                 print('extend obstacle')
                 # laser_points = laser_points.tolist()
-                star_rep = StarshapedRep((laser_points*resolusion).T, new_position)
-                graph_manager.extend_star_node(local_id, star_rep)
+                star_rep = StarshapedRep((laser_points*resolusion), new_position, robot_radius=0.0)
+                graph_manager.extend_star_node(local_id, star_rep, new_position)
                 current_star_id = copy(local_id)
                 star_rep.draw('test1')
                 path, reach = graph_manager.find_path(current_star_id, goal_position)
@@ -540,7 +258,7 @@ if __name__ == '__main__':
             
             reach_local = False
             
-        print('local position', iter, local_position, new_position, np.linalg.norm(last_new_position - new_position))
+        print(iter, 'local position:', local_position, 'pos', new_velocity, np.linalg.norm(last_new_position - new_position))
         # if staying in position too long, relax the local judge condition
         # if np.linalg.norm(last_new_position - new_position) < 0.1:
         #     local_position_count += 1
@@ -553,10 +271,8 @@ if __name__ == '__main__':
 
         if iter % interval == 0:
             plt.axis('equal')
-            plt.savefig('results/finding_path'+str(iter)+'.png', dpi=300)
-
-    
-
-
-
-
+            # plt.tight_layout()
+            # plt.savefig('results/finding_path'+str(iter)+'.png', dpi=300)
+    plt.tight_layout()
+    plt.savefig('finding_path.png', dpi=300)
+    # evaluation_modulation_result(xlim, ylim, graph_manager, goal_position)

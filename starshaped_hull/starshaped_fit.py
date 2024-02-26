@@ -27,12 +27,19 @@ def deri_polynomic_func_3(x, a, b, c, d):
 
 
 class StarshapedRep:
-    def __init__(self, points, center, theta=0.0) -> None:
+    def __init__(self, points, center, robot_theta=0.0, robot_radius=0.0, ros_simu=False, points_for_frontier=None) -> None:
         self.popt1 = self.popt2 = self.popt3 = self.popt4 = self.popt5 = None
         self.pcov1 = self.pcov2 = self.pcov3 = self.pcov4 = self.pcov5 = None
 
-        self.points = points.T
+        self.points = points
+        if ros_simu:
+            if points_for_frontier is None:
+                exit('points_for_frontier is None')
+            self.points_for_frontier = np.array(points_for_frontier)
+        else:
+            self.points_for_frontier = points
         self.center = self.reference_point = center
+        self.robot_radius = robot_radius
 
         self.segment_idxs = None
         self.segment_thetas = None
@@ -40,20 +47,28 @@ class StarshapedRep:
         self.popts = []
         self.pcovs = []
 
-        self.theta = theta
-        self.starshaped_fit()
+        self.fisrt_line_angle = np.arctan2(self.points[0][0] - self.center[1], self.points[1][0] - self.center[0])
+        print('first line angle', self.fisrt_line_angle)
+
+        self.robot_theta = robot_theta
+        self.starshaped_fit(ros_simu=ros_simu)
         self.get_frontier_points()
 
         # self.draw()
 
-    def starshaped_fit(self, segment=5, padding=3):
+    def starshaped_fit(self, segment=5, padding=2, ros_simu=False):
         starshaped_range = np.array([np.linalg.norm(self.points[i] - self.center) for i in range(len(self.points))])
 
         # gaussian smooth
-        self.starshaped_range = gaussian_filter1d(starshaped_range, sigma=3.0)
+        if ros_simu:
+            self.starshaped_range = gaussian_filter1d(starshaped_range, sigma=3.0)
+            # self.starshaped_range = starshaped_range
+        else:
+            self.starshaped_range = gaussian_filter1d(starshaped_range, sigma=1.0)
+            # self.starshaped_range = starshaped_range
 
-        # self.starshaped_range = starshaped_range
-
+        # [For DEBUG]
+        # print('robot_theta', self.robot_theta)
         self.x = np.linspace(0, 2*np.pi, len(self.starshaped_range))
         self.y = self.starshaped_range.flatten()  
 
@@ -61,14 +76,20 @@ class StarshapedRep:
         last_deri = None
         self.segment_idxs = []
         self.segment_thetas = []    
+        if ros_simu:
+            divide_pi_num = 50
+        else:
+            divide_pi_num = 1000
 
         for i in range(1, len(self.x)):
             deri = np.arctan2(self.y[i] - self.y[i-1], self.x[i] - self.x[i-1])
-            if last_deri is not None and abs(deri - last_deri) > np.pi/20:
+            if last_deri is not None and abs(deri - last_deri) > np.pi/divide_pi_num:
                 self.segment_idxs.append(i)
                 self.segment_thetas.append(self.x[i])
             last_deri = deri
-        print(self.segment_idxs, len(self.segment_idxs))
+        
+        # [For DEBUG]
+        # print(self.segment_idxs, len(self.segment_idxs))
 
         start_time = time.time()
         # segment data to 5 parts
@@ -122,10 +143,11 @@ class StarshapedRep:
         self.pcovs = []
 
         for i in range(segment_num):
-            if len(y_sets[i]) < 1:
-                print('error', i, len(y_sets[i]), self.segment_idxs[i]+padding, self.segment_idxs[i-1]-padding)
-                print(self.x[-1:6])
-                print(self.y[0:5])
+            # [For DEBUG]
+            # if len(y_sets[i]) < 1:
+            #     print('error', i, len(y_sets[i]), self.segment_idxs[i]+padding, self.segment_idxs[i-1]-padding)
+            #     print(self.x[-1:6])
+            #     print(self.y[0:5])
             popt, pcov = curve_fit(polynomic_func_3, x_sets[i], y_sets[i], maxfev=10000)
             self.popts.append(popt)
             self.pcovs.append(pcov)
@@ -140,11 +162,11 @@ class StarshapedRep:
         # self.popt5, self.pcov5 = curve_fit(polynomic_func_9, self.x5, self.y5, maxfev=10000)
 
     def get_frontier_points(self, 
-                            robot_radius=0.8, 
+                            robot_radius=0.5, 
                             min_samples=3, # dbscan parameter
                             ):
         dbscan = DBSCAN(eps=robot_radius, min_samples=min_samples)
-        filter_points = np.array(self.points)
+        filter_points = np.array(self.points_for_frontier)
         labels = dbscan.fit_predict(filter_points)
         self.labels = labels
 
@@ -227,13 +249,14 @@ class StarshapedRep:
             frontier_points.append((sorted_points[left] + sorted_points[right]) / 2)
 
         # project the frontier point on the boundary
-        for i in range(len(frontier_points)):
-            # calcute the angle of the frontier point
-            theta = np.arctan2(frontier_points[i][1] - self.center[1], frontier_points[i][0] - self.center[0])
-            if theta < 0:
-                theta += 2*np.pi
-            distance, _ = self.radius(theta)
-            frontier_points[i] = self.center + distance * np.array([np.cos(theta), np.sin(theta)])
+        # [Projection is optional]
+        # for i in range(len(frontier_points)):
+        #     # calcute the angle of the frontier point
+        #     theta = np.arctan2(frontier_points[i][1] - self.center[1], frontier_points[i][0] - self.center[0])
+        #     if theta < 0:
+        #         theta += 2*np.pi
+        #     distance, _ = self.radius(theta)
+        #     frontier_points[i] = self.center + distance * np.array([np.cos(theta), np.sin(theta)])
 
         self.frontier_points = np.array(frontier_points)
         self.sorted_points = np.array(sorted_points)
@@ -299,14 +322,28 @@ class StarshapedRep:
         #     return polynomic_func_9(theta, *self.popt4), deri_polynomic_func_9(theta, *self.popt4)
         # else:
         #     return polynomic_func_9(theta, *self.popt5), deri_polynomic_func_9(theta, *self.popt5)
+        theta -= self.robot_theta
+        
+        if theta < 0:
+            theta += 2*np.pi
+        elif theta > 2*np.pi:
+            theta -= 2*np.pi
+       
         for i in range(len(self.segment_thetas)):
             # print(i, len(self.popts))
             if theta < self.segment_thetas[i]:
-                return polynomic_func_3(theta, *self.popts[i]), deri_polynomic_func_3(theta, *self.popts[i])
+                return polynomic_func_3(theta, *self.popts[i])-self.robot_radius, deri_polynomic_func_3(theta, *self.popts[i])
         
-        return polynomic_func_3(theta, *self.popts[-1]), deri_polynomic_func_3(theta, *self.popts[-1])
+        return polynomic_func_3(theta, *self.popts[-1])-self.robot_radius, deri_polynomic_func_3(theta, *self.popts[-1])
     
-    def get_gamma(self, point, inverted=True, p=1):
+    def get_radius(self, point):
+        theta = np.arctan2(point[1] - self.center[1], point[0] - self.center[0])
+        if theta < 0:
+            theta += 2*np.pi
+        radius_val, _ = self.radius(theta)
+        return radius_val
+
+    def get_gamma(self, point, inverted=True, p=2):
         if np.linalg.norm(point - self.center) < 0.0000001:
             return np.inf
         theta = np.arctan2(point[1] - self.center[1], point[0] - self.center[0])
@@ -414,25 +451,24 @@ class StarshapedRep:
 
         # generate a random color
         color = np.random.rand(3,)
-        plt.plot(re_starshaped_points[0:, 0], re_starshaped_points[0:, 1], label='fit')
+        plt.plot(re_starshaped_points[:, 0], re_starshaped_points[:, 1], '--', label='fit', alpha=1.0)
         
         # plot the raw points
         # plt.scatter(self.points[0:-1, 0], self.points[0:-1, 1], label='raw')
         # plot dbscan result
-        plt.scatter(self.points[:, 0], self.points[:, 1], c=self.labels, label='dbscan', s=5)
+        plt.scatter(self.points_for_frontier[:, 0], self.points_for_frontier[:, 1], c='black', label='dbscan', s=10, alpha=0.6)
         # plt.scatter(self.points[:, 0], self.points[:, 1], c=color, label='dbscan', s=5)
     
         # plot the center point
         plt.scatter(self.center[0], self.center[1], label='center', s=60)
 
         # plot frontier points as plus symbol
-        plt.plot(self.frontier_points[:, 0], self.frontier_points[:, 1], 'k+', label='frontier points')
+        plt.plot(self.frontier_points[:, 0], self.frontier_points[:, 1], 'k+', c='blue', label='frontier points')
         # scatter frontier points with color and plus symbol
-        plt.scatter(self.frontier_points[:, 0], self.frontier_points[:, 1], c='r', label='frontier points', s=10)
+        # plt.scatter(self.frontier_points[:, 0], self.frontier_points[:, 1], c='y', label='frontier points', s=10)
         
         # the sides points
-        plt.plot(self.sorted_points[:, 0], self.sorted_points[:, 1], 'y+', label='sorted points', scalex=20, scaley=20)
-        
+        # plt.plot(self.sorted_points[:, 0], self.sorted_points[:, 1], 'y+', label='sorted points', scalex=20, scaley=20)
         if save:
             plt.savefig(name+'_starshaped_fit_retrive.png', dpi=300)
 
