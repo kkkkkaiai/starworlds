@@ -251,7 +251,3 @@ class GraphManager:
             self._edges[neighbor_id].remove(node_id)
         del self._edges[node_id]
         del self._nodes[node_id]
-
-
-
-    

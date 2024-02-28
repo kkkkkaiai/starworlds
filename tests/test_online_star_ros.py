@@ -41,6 +41,74 @@ resolusion = 0.05
 
 arrow_array_pub = None
 
+def display_road_map(pub, graph_manager):
+    # the node in the graph is displayed as a cuboid
+    # the edge in the graph is displayed as a line
+    marker_array = MarkerArray()
+    start_id = graph_manager.start_id
+    for node_id in graph_manager._nodes:
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = rospy.Time.now()
+        marker.ns = "basic_shapes"
+        marker.id = node_id
+        marker.type = Marker.CUBE
+        marker.action = Marker.ADD
+        marker.pose.position.x = graph_manager._nodes[node_id]._position[0]
+        marker.pose.position.y = graph_manager._nodes[node_id]._position[1]
+        marker.pose.position.z = 0
+        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.y = 0.0
+        marker.pose.orientation.z = 0.0
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.1
+        marker.scale.y = 0.1
+        marker.scale.z = 0.05
+        marker.color.a = 0.8
+        if node_id == start_id:
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+        else:
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+        marker_array.markers.append(marker)
+
+        # judge the node is starshaped
+        if node_id in graph_manager._star_id_list:
+            edges = graph_manager.get_neighbor(node_id)
+            for edge in edges:
+                lines = Marker()
+                lines.header.frame_id = "odom"
+                lines.header.stamp = rospy.Time.now()
+                lines.ns = "basic_shapes"
+                lines.id = node_id * 1000 + edge
+                lines.type = Marker.LINE_STRIP
+                lines.action = Marker.ADD
+                print('position', graph_manager._nodes[node_id]._position, graph_manager._nodes[edge]._position)
+                point_from = Point32()
+                point_from.x = graph_manager._nodes[node_id]._position[0]
+                point_from.y = graph_manager._nodes[node_id]._position[1]
+                point_from.z = 0
+                lines.points.append(point_from)
+                point_to = Point32()
+                point_to.x = graph_manager._nodes[edge]._position[0]
+                point_to.y = graph_manager._nodes[edge]._position[1]
+                point_to.z = 0
+                lines.points.append(point_to)
+                lines.pose.orientation.w = 1.0
+                lines.scale.x = 0.01
+                lines.color.a = 0.5
+                lines.color.r = 0.5
+                lines.color.g = 1.0
+                lines.color.b = 0.5
+                marker_array.markers.append(lines)
+            
+    pub.publish(marker_array)
+        
+
+
 def modulation_round_robot(position, robot_yaw, local_position, graph_manager, safety_margin=0.5, pub=True):
     # calculate the gamma of current position
     current_velocity, current_min_Gamma = modulation_velocity(position, local_position, graph_manager)
@@ -226,8 +294,6 @@ def modulation_nearest_group(position, local_position, laser_points, graph_manag
             nearest_point = copy(laser_points[i])
 
     current_velocity, current_min_Gamma = modulation_velocity(position, local_position, graph_manager)
-    # print('point length', len(laser_points), position, current_velocity, nearest_point)
-
 
     # calculate the angle of the nearest point
     nearest_angle = np.arctan2(nearest_point[1] - position[1], nearest_point[0] - position[0])
@@ -261,22 +327,9 @@ def modulation_nearest_group(position, local_position, laser_points, graph_manag
     
     # computing weight based on the Gamma value
     weight_temp = np.array(gamma_values)
-    # filter the weight with the lower of 1.35
-    # weight = copy(weight_temp)
-    # get the index of the weight that is lower than 1.35 and higher than 0.9
-    # weight_import_1 = np.where(weight < 1.8)
-    # weight_import_2 = np.where(weight > 0.9)
-    # weight_import = np.intersect1d(weight_import_1, weight_import_2)
-    # print('modulation', weight_import, weight)
     print('gamma', gamma_values)
     new_velocity = copy(current_velocity)
     if  min_distance < safety_margin * 1.2:
-        # weight_temp = np.zeros(len(nearest_points))
-        # if len(weight_import) != len(nearest_points):
-        #     for i in range(len(weight_import)):
-        #         weight_temp[weight_import[i]] = weight[weight_import[i]]
-        # else:
-        #     weight_temp = copy(weight)
         weight = weight_temp / np.sum(weight_temp)
         
         # calculate the new velocity
@@ -289,18 +342,9 @@ def modulation_nearest_group(position, local_position, laser_points, graph_manag
             for i in range(len(nearest_points)):
                 pulsive_velocity += combine_pulsive_vectors[i] * weight[i]
 
-            weighted_velocity = weighted_velocity + pulsive_velocity*0.4
+            weighted_velocity = weighted_velocity + pulsive_velocity*min((-(2.25)**min_distance+1.5), 0)
 
         new_velocity = weighted_velocity / np.linalg.norm(weighted_velocity)
-        # 
-        # weighted_matrix = np.ones((2,2))
-        # for i in range(len(nearest_points)):
-            # print(velocity_vectors[i].reshape(2,1).shape, np.linalg.pinv(new_velocity.reshape(2,1)).shape)
-            # print(velocity_vectors[i].reshape(2,1)@(np.linalg.pinv(new_velocity.reshape(2,1))))
-            # weighted_matrix = weighted_matrix.dot(velocity_vectors[i].reshape(2,1)@(np.linalg.pinv(new_velocity.reshape(2,1)))*weight[i])
-
-        # new_velocity = weighted_matrix.dot(new_velocity)
-    
 
     return new_velocity
 
@@ -582,6 +626,7 @@ if __name__ == '__main__':
     frontier_pub = rospy.Publisher('/frontier', MarkerArray, queue_size=10)
     arrow_array_pub = rospy.Publisher('/arrow_array', MarkerArray, queue_size=10)
     path_pub = rospy.Publisher('/path', Path, queue_size=10)
+    roadmap_pub = rospy.Publisher('/roadmap', MarkerArray, queue_size=10)
 
     xlim = [-5, 20]
     ylim = [-5, 20]
@@ -772,6 +817,10 @@ if __name__ == '__main__':
         publish_subgoal(subgoal_pub, local_position)
         publish_arrow_marker(arrow_pub, current_position, target_yaw, 0)
         publish_cmd_vel(cmd_pub, control_signal)
+
+        # display the roadmap
+        display_road_map(roadmap_pub, graph_manager)
+
         plt.axis('equal')
         if iter % interval == 0:
             plt.arrow(new_position[0], new_position[1], new_velocity[0], new_velocity[1], head_width=0.1, head_length=0.1, fc='black', ec='black', animated=True)
