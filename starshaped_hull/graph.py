@@ -8,14 +8,14 @@ from starshaped_hull.starshaped_fit import StarshapedRep
 class Node:
     def __init__(self, point, type=1) -> None:
         # point is the position of the node
-        self._point = point
+        self._position = point
         self._type = type # 0 is starshaped node, 1 is frontier node
         self._valid = True
         self._star_rep_id = None
         self._star_rep = None
 
     def __hash__(self) -> int:
-        return hash(tuple(self._point))
+        return hash(tuple(self._position))
 
     def stuck(self):
         self._valid = False
@@ -42,10 +42,16 @@ class Node:
         self._type = 0
         self._star_rep_id = id
         
-    def is_in_star(self, point):
+    def is_in_star(self, position):
         if self._type == 0:
-            return self._star_rep.is_in_star(point)
+            return self._star_rep.is_in_star(position)
         return False
+    
+    def get_star_rep(self):
+        return self._star_rep
+    
+    def project_to_boundary(self, position):
+        return self._star_rep.project_to_boundary(position)
 
 # construct undirect graph
 class GraphManager:
@@ -86,6 +92,21 @@ class GraphManager:
         self._star_id_list.append(self.start_id)
         self.initial = True
 
+    def get_current_star_id(self, position):
+        # choose the biggest Gamma to determine current starshaped id
+        max_gamma = 0
+        min_distance = 1e10
+        star_id = None
+        for node_id in self._star_id_list:
+            gamma = self._nodes[node_id].get_gamma(position)
+            distance = np.linalg.norm(position - self._nodes[node_id]._position)
+            if gamma > max_gamma and distance < min_distance:
+                max_gamma = gamma
+                min_distance = distance
+                star_id = node_id
+
+        return star_id 
+
     def find_path(self, in_star_id, goal_point):
         # in_star_id is the id in current starshaped polygon
         # return subgoal's point as attractive point
@@ -116,7 +137,7 @@ class GraphManager:
 
             if nearest_node_id is None:
                 nearest_node_id = node_id
-            elif np.linalg.norm(goal_point - self._nodes[node_id]._point) < np.linalg.norm(goal_point - self._nodes[nearest_node_id]._point):
+            elif np.linalg.norm(goal_point - self._nodes[node_id]._position) < np.linalg.norm(goal_point - self._nodes[nearest_node_id]._position):
                 nearest_node_id = node_id
 
         if nearest_node_id is None:
@@ -159,11 +180,11 @@ class GraphManager:
                         close_list.add(next_id)
 
                     if road_map[next_id].g > road_map[cur_id].g + \
-                            np.linalg.norm(np.array(self._nodes[next_id]._point) - np.array(self._nodes[cur_id]._point)):
+                            np.linalg.norm(np.array(self._nodes[next_id]._position) - np.array(self._nodes[cur_id]._position)):
                         road_map[next_id].g = road_map[cur_id].g + \
-                                                np.linalg.norm(np.array(self._nodes[next_id]._point) - np.array(self._nodes[cur_id]._point))
+                                                np.linalg.norm(np.array(self._nodes[next_id]._position) - np.array(self._nodes[cur_id]._position))
 
-                        f_value = road_map[next_id].g + np.linalg.norm(goal_point - self._nodes[next_id]._point)
+                        f_value = road_map[next_id].g + np.linalg.norm(goal_point - self._nodes[next_id]._position)
                         heapq.heappush(open_list, (f_value, next_id))
                         road_map[next_id].parent = cur_id
 
@@ -172,13 +193,13 @@ class GraphManager:
             # if goal point in the star, return the goal point
             if len(close_list) == 1:
                 # log path and path id
-                path['path'] = [self._nodes[in_star_id]._point, goal_point]
+                path['path'] = [self._nodes[in_star_id]._position, goal_point]
                 path['path_id'] = [in_star_id, 0] # 0 is the id of the goal point
             else:
-                backward_path = {'path':[self._nodes[nearest_node_id]._point], 'path_id':[nearest_node_id]}
+                backward_path = {'path':[self._nodes[nearest_node_id]._position], 'path_id':[nearest_node_id]}
                 node_id = road_map[nearest_node_id].parent
                 while node_id != -1:
-                    backward_path['path'].append(self._nodes[node_id]._point)
+                    backward_path['path'].append(self._nodes[node_id]._position)
                     backward_path['path_id'].append(node_id)
                     node_id = (road_map[node_id]).parent
 
@@ -194,7 +215,7 @@ class GraphManager:
     def extend_star_node(self, node_id, star_rep, new_position):
         # node_id is the id of current node
         self._nodes[node_id].star_rep(star_rep, node_id)
-        self._nodes[node_id]._point = new_position
+        self._nodes[node_id]._position = new_position
         frontier_points = star_rep.frontier_points
         for i in range(len(frontier_points)):
             # check the frontier points is in the other starshaped polygon

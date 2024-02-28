@@ -14,3 +14,12 @@
 14√. fix error rotation in real environment
 15. skip checking in the current starshaped
 15. do experiment in gazebo
+
+New issues
+
+1.inapproatiate frontier points, e.g., in cornor that hard to reach;
+2.wrong guide velocity vector;
+
+Milestone:
+1. put the robot at any position in a finished starshaped graph, the robot can reach the goal autonomously
+2. 

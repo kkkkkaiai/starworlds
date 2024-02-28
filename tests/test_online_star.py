@@ -237,10 +237,10 @@ if __name__ == '__main__':
                     print('remove the obstacle', np.linalg.norm(laser_points[i] - local_position))
                     find_obstacle = True
                     # remove the node in the graph
-                    graph_manager.remove_node(id)
+                    graph_manager.remove_node(local_id)
                     # generate a new path
                     path, reach = graph_manager.find_path(current_star_id, goal_position)
-                    id = path['path_id'][-1]
+                    local_id = path['path_id'][-1]
                     local_position = path['path'][-1]
                    
                     break

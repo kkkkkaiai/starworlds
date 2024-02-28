@@ -31,6 +31,7 @@ class StarshapedRep:
         self.popt1 = self.popt2 = self.popt3 = self.popt4 = self.popt5 = None
         self.pcov1 = self.pcov2 = self.pcov3 = self.pcov4 = self.pcov5 = None
 
+        print('star fit', len(points))
         self.points = points
         if ros_simu:
             if points_for_frontier is None:
@@ -56,12 +57,15 @@ class StarshapedRep:
 
         # self.draw()
 
+    def get_points(self):
+        return self.points
+
     def starshaped_fit(self, segment=5, padding=2, ros_simu=False):
         starshaped_range = np.array([np.linalg.norm(self.points[i] - self.center) for i in range(len(self.points))])
 
         # gaussian smooth
         if ros_simu:
-            self.starshaped_range = gaussian_filter1d(starshaped_range, sigma=3.0)
+            self.starshaped_range = gaussian_filter1d(starshaped_range, sigma=1.0)
             # self.starshaped_range = starshaped_range
         else:
             self.starshaped_range = gaussian_filter1d(starshaped_range, sigma=1.0)
@@ -77,7 +81,7 @@ class StarshapedRep:
         self.segment_idxs = []
         self.segment_thetas = []    
         if ros_simu:
-            divide_pi_num = 50
+            divide_pi_num = 500
         else:
             divide_pi_num = 1000
 
@@ -162,7 +166,7 @@ class StarshapedRep:
         # self.popt5, self.pcov5 = curve_fit(polynomic_func_9, self.x5, self.y5, maxfev=10000)
 
     def get_frontier_points(self, 
-                            robot_radius=0.5, 
+                            robot_radius=0.3, 
                             min_samples=3, # dbscan parameter
                             ):
         dbscan = DBSCAN(eps=robot_radius, min_samples=min_samples)
@@ -263,6 +267,14 @@ class StarshapedRep:
         # print(sorted_points)
         # print(frontier_points)
 
+    def project_to_boundary(self, position):
+        # calcute the angle of the frontier point
+        theta = np.arctan2(position[1] - self.center[1], position[0] - self.center[0])
+        if theta < 0:
+            theta += 2*np.pi
+        distance, _ = self.radius(theta)
+        return self.center + distance * np.array([np.cos(theta), np.sin(theta)])
+
     def get_normal_direction(self, x_t):
         # normal(x_t) = dGamma(x_t) / d(x_t)
         theta = np.arctan2(x_t[1] - self.center[1], x_t[0] - self.center[0])
@@ -343,7 +355,7 @@ class StarshapedRep:
         radius_val, _ = self.radius(theta)
         return radius_val
 
-    def get_gamma(self, point, inverted=True, p=2):
+    def get_gamma(self, point, inverted=True, p=1.0):
         if np.linalg.norm(point - self.center) < 0.0000001:
             return np.inf
         theta = np.arctan2(point[1] - self.center[1], point[0] - self.center[0])

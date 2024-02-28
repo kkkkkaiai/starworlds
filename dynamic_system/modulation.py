@@ -74,7 +74,7 @@ def compute_diagonal_matrix(
     #     eigenvalue_tangent = 1 - 1.0 / abs(Gamma) ** tangent_power
     
     # 2 comparison
-    if Gamma <= 1.15:
+    if Gamma <= 1.2:
         delta_eigenvalue = 1.0 / abs(Gamma) ** (self_priority / rho)
         eigenvalue_reference = 1 - delta_eigenvalue
         eigenvalue_tangent = 1
@@ -315,7 +315,7 @@ def compute_modulation_matrix(D, E, weight, initial_velocity):
     return vel.T
 
 
-def modulation_velocity(position, goal_position, graph_manager, safety_margin=0.0):
+def modulation_velocity(position, goal_position, graph_manager, safety_margin=0.0, project=True):
     attractive_dir = goal_position - position
     initial_velocity = attractive_dir / np.linalg.norm(attractive_dir)
     # print('init velocity', initial_velocity)
@@ -329,16 +329,22 @@ def modulation_velocity(position, goal_position, graph_manager, safety_margin=0.
         id = graph_manager._star_id_list[i]
         Gamma[i] = graph_manager._nodes[id].get_gamma(position)
 
-    min_Gamma = np.max(Gamma)
+        # if position has been outside the obstacle, project the postion to the boundary
+
+    max_Gamma = np.max(Gamma)
+    if max_Gamma < 1.1 and project:
+        max_Gamma_id = np.argmax(Gamma)
+        position = graph_manager._nodes[graph_manager._star_id_list[max_Gamma_id]].project_to_boundary(position)
+        Gamma[max_Gamma_id] = graph_manager._nodes[graph_manager._star_id_list[max_Gamma_id]].get_gamma(position)
     # for i in range(len(Gamma)):
     #     if Gamma[i] < min_Gamma and Gamma[i] > 1.0:
     #         min_Gamma = Gamma[i]
 
     # [debug GAMMA]
-    print('gamma', Gamma)
+    # print('gamma', Gamma)
     weight = compute_weight(Gamma)
     # [debug weight]
-    print(weight, obs_number)
+    # print(weight, obs_number)
 
     E = np.zeros((2, 2, obs_number))
     D = np.zeros((2, 2, obs_number))
@@ -356,7 +362,14 @@ def modulation_velocity(position, goal_position, graph_manager, safety_margin=0.
     # print('E', E)
     # print('E_orth', E_orth)
     new_velocity = compute_modulation_matrix(D, E, weight, initial_velocity)
-    # print(modulation_matrix)
-    # new_velocity = modulation_matrix.dot(initial_velocity)
 
-    return new_velocity, min_Gamma
+
+    return new_velocity, max_Gamma
+
+def modulation_frontier_points(frontier_points, reference_position, star_rep, safety_margin):
+    for i in range(len(frontier_points)):
+        gamma = star_rep.get_gamma(frontier_points[i])
+        attractive_dir = frontier_points[i] - reference_position
+        frontier_points[i] = frontier_points[i] + attractive_dir / np.linalg.norm(attractive_dir) * safety_margin
+
+        
